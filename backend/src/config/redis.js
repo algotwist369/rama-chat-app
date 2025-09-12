@@ -8,13 +8,20 @@ const connectRedis = async () => {
         if (process.env.USE_REDIS === 'true') {
             const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
             
-            redisClient = createClient({
+            // Add password if provided
+            const redisOptions = {
                 url: redisUrl,
                 socket: {
                     connectTimeout: 10000,
                     lazyConnect: true
                 }
-            });
+            };
+            
+            if (process.env.REDIS_PASSWORD) {
+                redisOptions.password = process.env.REDIS_PASSWORD;
+            }
+            
+            redisClient = createClient(redisOptions);
 
             redisClient.on('error', (err) => {
                 console.error('Redis Client Error:', err);

@@ -152,8 +152,11 @@ class EnvironmentConfig {
         }
         
         // Production Redis (recommended)
-        process.env.USE_REDIS = process.env.USE_REDIS || 'true';
+        if (!process.env.USE_REDIS) {
+            process.env.USE_REDIS = 'true';
+        }
         process.env.REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
+        process.env.REDIS_PASSWORD = process.env.REDIS_PASSWORD || 'ramachat123';
         
         // Production security settings
         process.env.BCRYPT_ROUNDS = process.env.BCRYPT_ROUNDS || '12';
