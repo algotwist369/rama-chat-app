@@ -120,7 +120,7 @@ class FrontendEnvironmentConfig {
         // Production API configuration
         this.config = {
             API_URL: this.getEnvVar('VITE_API_URL') || 'https://c.api.d0s369.co.in',
-            FRONTEND_URL: this.getEnvVar('VITE_FRONTEND_URL') || 'https://chat.ciphra.in',
+            FRONTEND_URL: this.getEnvVar('VITE_FRONTEND_URL') || 'https://chat.d0s369.co.in',
             SOCKET_URL: this.getEnvVar('VITE_SOCKET_URL') || 'https://c.api.d0s369.co.in',
             
             // Production settings

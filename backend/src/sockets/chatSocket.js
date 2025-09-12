@@ -12,7 +12,7 @@ function initSocket(server, redisAdapter, app) {
   // Socket.io CORS configuration
   const socketCorsOrigins = process.env.SOCKET_CORS_ORIGINS 
     ? process.env.SOCKET_CORS_ORIGINS.split(',').map(origin => origin.trim())
-    : ['https://chat.ciphra.in', 'http://localhost:5173'];
+    : ['https://chat.d0s369.co.in', 'http://localhost:5173'];
 
   const io = new Server(server, { 
     cors: { 

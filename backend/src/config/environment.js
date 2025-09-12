@@ -130,7 +130,7 @@ class EnvironmentConfig {
         
         // Production API configuration
         process.env.API_URL = process.env.API_URL || 'https://c.api.d0s369.co.in';
-        process.env.FRONTEND_URL = process.env.FRONTEND_URL || 'https://chat.ciphra.in';
+        process.env.FRONTEND_URL = process.env.FRONTEND_URL || 'https://chat.d0s369.co.in';
         
         // Production database (MongoDB Atlas)
         process.env.MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://infoalgotwist_db_user:inH2z5QJVydf9JYN@cluster0.w6hcrf0.mongodb.net/rama-chat-app';
@@ -138,8 +138,8 @@ class EnvironmentConfig {
         process.env.MONGO_SSL_VALIDATE = process.env.MONGO_SSL_VALIDATE || 'true';
         
         // Production CORS
-        process.env.CORS_ORIGINS = process.env.CORS_ORIGINS || 'https://chat.ciphra.in';
-        process.env.SOCKET_CORS_ORIGINS = process.env.SOCKET_CORS_ORIGINS || 'https://chat.ciphra.in';
+        process.env.CORS_ORIGINS = process.env.CORS_ORIGINS || 'https://chat.d0s369.co.in';
+        process.env.SOCKET_CORS_ORIGINS = process.env.SOCKET_CORS_ORIGINS || 'https://chat.d0s369.co.in';
         
         // Production file uploads
         process.env.FILE_BASE_URL = process.env.FILE_BASE_URL || 'https://c.api.d0s369.co.in';

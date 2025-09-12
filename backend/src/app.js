@@ -27,7 +27,7 @@ app.use(express.urlencoded({ extended: true, limit: urlLimit }));
 // CORS configuration
 const corsOrigins = process.env.CORS_ORIGINS 
     ? process.env.CORS_ORIGINS.split(',').map(origin => origin.trim())
-    : ['https://chat.ciphra.in', 'http://localhost:5173'];
+    : ['https://chat.d0s369.co.in', 'http://localhost:5173'];
 
 app.use(cors({
     origin: corsOrigins,
