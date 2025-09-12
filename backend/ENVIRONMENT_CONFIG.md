@@ -60,7 +60,7 @@ npm run config:show
 ### CORS Configuration
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CORS_ORIGINS` | `https://rama.ciphra.in,http://localhost:5173` | Allowed origins (comma-separated) |
+| `CORS_ORIGINS` | `https://rama.d0s369.co.in,http://localhost:5173` | Allowed origins (comma-separated) |
 | `CORS_CREDENTIALS` | `true` | Allow credentials |
 | `CORS_METHODS` | `GET,POST,PUT,PATCH,DELETE,OPTIONS` | Allowed HTTP methods |
 | `CORS_HEADERS` | `Content-Type,Authorization` | Allowed headers |
@@ -68,7 +68,7 @@ npm run config:show
 ### Socket.io Configuration
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SOCKET_CORS_ORIGINS` | `https://rama.ciphra.in,http://localhost:5173` | Socket.io allowed origins |
+| `SOCKET_CORS_ORIGINS` | `https://rama.d0s369.co.in,http://localhost:5173` | Socket.io allowed origins |
 | `SOCKET_CORS_CREDENTIALS` | `true` | Socket.io allow credentials |
 | `SOCKET_TRANSPORTS` | `polling,websocket` | Socket.io transports |
 | `SOCKET_PING_TIMEOUT` | `60000` | Socket.io ping timeout (ms) |
@@ -148,7 +148,7 @@ MONGO_URI=mongodb://localhost:27017/rama-chat-app
 NODE_ENV=production
 PORT=5000
 API_URL=https://chat.api.d0s369.co.in
-FRONTEND_URL=https://rama.ciphra.in
+FRONTEND_URL=https://rama.d0s369.co.in
 MONGO_URI=mongodb+srv://username:password@cluster.mongodb.net/rama-chat-app
 JWT_SECRET=your_secure_production_secret
 ```
@@ -264,7 +264,7 @@ PORT=5000
 HOST=0.0.0.0
 
 API_URL=https://chat.api.d0s369.co.in
-FRONTEND_URL=https://rama.ciphra.in
+FRONTEND_URL=https://rama.d0s369.co.in
 
 MONGO_URI=mongodb+srv://username:password@cluster.mongodb.net/rama-chat-app
 MONGO_SSL=true
@@ -273,8 +273,8 @@ MONGO_SSL_VALIDATE=true
 JWT_SECRET=your_very_secure_production_secret_here
 JWT_EXPIRES_IN=24h
 
-CORS_ORIGINS=https://rama.ciphra.in
-SOCKET_CORS_ORIGINS=https://rama.ciphra.in
+CORS_ORIGINS=https://rama.d0s369.co.in
+SOCKET_CORS_ORIGINS=https://rama.d0s369.co.in
 
 FILE_BASE_URL=https://chat.api.d0s369.co.in
 MAX_FILE_SIZE=10485760

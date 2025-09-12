@@ -1,37 +1,27 @@
+@import "./styles/smooth-transitions.css";
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-@import "./styles/smooth-transitions.css";
 
 /* Custom responsive utilities */
-@layer utilities {
-  /* Extra small breakpoint for very small screens */
-  @media (min-width: 475px) {
-    .xs\:inline {
-      display: inline;
-    }
-    .xs\:hidden {
-      display: none;
-    }
+/* Extra small breakpoint for very small screens */
+@media (min-width: 475px) {
+  .xs\:inline {
+    display: inline;
   }
-  
-  
-  /* Improved scrollbar styling */
-  .scrollbar-hide {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
-  }
-  
-  .scrollbar-hide::-webkit-scrollbar {
+  .xs\:hidden {
     display: none;
   }
-  
-  
-  
-  
-  
-  
-  
+}
+
+/* Improved scrollbar styling */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
 }
 
 /* Global mobile optimizations */
@@ -70,5 +60,5 @@
 }
 
 body {
-    background-color: #212529;
+    background-color: #157de4;
 }

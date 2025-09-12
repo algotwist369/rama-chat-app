@@ -163,7 +163,7 @@ HOST=0.0.0.0
 
 # API Configuration
 API_URL=https://c.api.d0s369.co.in
-FRONTEND_URL=https://chat.ciphra.in
+FRONTEND_URL=https://chat.d0s369.co.in
 
 # Database Configuration (MongoDB Atlas)
 MONGO_URI=mongodb+srv://infoalgotwist_db_user:inH2z5QJVydf9JYN@cluster0.w6hcrf0.mongodb.net/rama-chat-app
@@ -176,13 +176,13 @@ JWT_EXPIRES_IN=24h
 JWT_REFRESH_EXPIRES_IN=7d
 
 # CORS Configuration
-CORS_ORIGINS=https://chat.ciphra.in
+CORS_ORIGINS=https://chat.d0s369.co.in
 CORS_CREDENTIALS=true
 CORS_METHODS=GET,POST,PUT,PATCH,DELETE,OPTIONS
 CORS_HEADERS=Content-Type,Authorization
 
 # Socket.io Configuration
-SOCKET_CORS_ORIGINS=https://chat.ciphra.in
+SOCKET_CORS_ORIGINS=https://chat.d0s369.co.in
 SOCKET_CORS_CREDENTIALS=true
 SOCKET_CORS_METHODS=GET,POST,PUT,PATCH,DELETE,OPTIONS
 SOCKET_TRANSPORTS=polling,websocket

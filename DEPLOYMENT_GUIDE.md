@@ -1,7 +1,7 @@
 # RAMA Chat App - AWS EC2 Deployment Guide
 
 This guide will help you deploy your RAMA Chat App on AWS EC2 with the following setup:
-- **Frontend**: `https://chat.ciphra.in`
+- **Frontend**: `https://chat.d0s369.co.in`
 - **Backend API**: `https://c.api.d0s369.co.in`
 - **Web Server**: Apache (with SSL certificates)
 - **Process Manager**: PM2
@@ -11,7 +11,7 @@ This guide will help you deploy your RAMA Chat App on AWS EC2 with the following
 ## Prerequisites
 
 1. AWS Account with EC2 access
-2. Domain names configured (chat.ciphra.in and c.api.d0s369.co.in)
+2. Domain names configured (chat.d0s369.co.in and c.api.d0s369.co.in)
 3. MongoDB Atlas account and database
 4. Your .pem key file from EC2 instance creation
 
@@ -86,7 +86,7 @@ sudo chown -R ubuntu:ubuntu /var/www/rama-chat
 
 Configure your DNS records to point to your EC2 instance:
 
-### For chat.ciphra.in:
+### For chat.d0s369.co.in:
 ```
 Type: A
 Name: chat
@@ -204,7 +204,7 @@ sudo systemctl stop apache2
 
 # Get SSL certificates
 sudo certbot certonly --standalone -d c.api.d0s369.co.in --non-interactive --agree-tos --email admin@c.api.d0s369.co.in
-sudo certbot certonly --standalone -d chat.ciphra.in --non-interactive --agree-tos --email admin@chat.ciphra.in
+sudo certbot certonly --standalone -d chat.d0s369.co.in --non-interactive --agree-tos --email admin@chat.d0s369.co.in
 
 # Update Apache configurations with SSL settings
 # (The ssl-setup.sh script handles this automatically)
@@ -232,7 +232,7 @@ sudo nano /var/www/rama-chat/.env.production
 Ensure these values are correct:
 ```
 API_URL=https://c.api.d0s369.co.in
-FRONTEND_URL=https://chat.ciphra.in
+FRONTEND_URL=https://chat.d0s369.co.in
 MONGO_URI=your_mongodb_atlas_connection_string
 JWT_SECRET=your_secure_jwt_secret
 REDIS_PASSWORD=ramachat123
@@ -257,7 +257,7 @@ sudo systemctl status apache2
 Test your deployment:
 
 1. **Backend Health Check**: https://c.api.d0s369.co.in/health
-2. **Frontend**: https://chat.ciphra.in
+2. **Frontend**: https://chat.d0s369.co.in
 3. **API Endpoints**: https://c.api.d0s369.co.in/api/auth/login
 
 ## Troubleshooting
@@ -272,7 +272,7 @@ Test your deployment:
 
 2. **SSL Certificate Issues**: Check domain DNS
    ```bash
-   nslookup chat.ciphra.in
+   nslookup chat.d0s369.co.in
    nslookup c.api.d0s369.co.in
    ```
 
@@ -326,5 +326,5 @@ If you encounter issues:
 5. Verify environment variables
 
 Your RAMA Chat App should now be successfully deployed and accessible at:
-- **Frontend**: https://chat.ciphra.in
+- **Frontend**: https://chat.d0s369.co.in
 - **Backend API**: https://c.api.d0s369.co.in

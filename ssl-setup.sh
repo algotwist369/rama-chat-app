@@ -35,7 +35,7 @@ fi
 print_status "Checking domain accessibility..."
 
 BACKEND_DOMAIN="c.api.d0s369.co.in"
-FRONTEND_DOMAIN="chat.ciphra.in"
+FRONTEND_DOMAIN="chat.d0s369.co.in"
 
 # Function to check domain
 check_domain() {
@@ -116,8 +116,8 @@ sudo sed -i 's|# SSLCertificateKeyFile /etc/letsencrypt/live/c.api.d0s369.co.in/
 
 # Update frontend configuration
 sudo sed -i 's/# SSLEngine on/SSLEngine on/' /etc/apache2/sites-available/frontend.conf
-sudo sed -i 's|# SSLCertificateFile /etc/letsencrypt/live/chat.ciphra.in/fullchain.pem|SSLCertificateFile /etc/letsencrypt/live/chat.ciphra.in/fullchain.pem|' /etc/apache2/sites-available/frontend.conf
-sudo sed -i 's|# SSLCertificateKeyFile /etc/letsencrypt/live/chat.ciphra.in/privkey.pem|SSLCertificateKeyFile /etc/letsencrypt/live/chat.ciphra.in/privkey.pem|' /etc/apache2/sites-available/frontend.conf
+sudo sed -i 's|# SSLCertificateFile /etc/letsencrypt/live/chat.d0s369.co.in/fullchain.pem|SSLCertificateFile /etc/letsencrypt/live/chat.d0s369.co.in/fullchain.pem|' /etc/apache2/sites-available/frontend.conf
+sudo sed -i 's|# SSLCertificateKeyFile /etc/letsencrypt/live/chat.d0s369.co.in/privkey.pem|SSLCertificateKeyFile /etc/letsencrypt/live/chat.d0s369.co.in/privkey.pem|' /etc/apache2/sites-available/frontend.conf
 
 # Create HTTP to HTTPS redirect configuration
 print_status "Setting up HTTP to HTTPS redirects..."
@@ -133,8 +133,8 @@ EOF
 # Frontend redirect
 sudo tee /etc/apache2/sites-available/frontend-redirect.conf > /dev/null << EOF
 <VirtualHost *:80>
-    ServerName chat.ciphra.in
-    Redirect permanent / https://chat.ciphra.in/
+    ServerName chat.d0s369.co.in
+    Redirect permanent / https://chat.d0s369.co.in/
 </VirtualHost>
 EOF
 

@@ -90,7 +90,7 @@ npm run env:prod
 // Automatically configured when MODE=production
 {
   API_URL: 'https://chat.api.d0s369.co.in',
-  FRONTEND_URL: 'https://rama.ciphra.in',
+  FRONTEND_URL: 'https://rama.d0s369.co.in',
   SOCKET_URL: 'https://chat.api.d0s369.co.in',
   DEBUG_MODE: false,
   LOG_LEVEL: 'warn',
@@ -128,7 +128,7 @@ VITE_SOCKET_URL=http://dev-api.example.com
 ```env
 # Production settings
 VITE_API_URL=https://chat.api.d0s369.co.in
-VITE_FRONTEND_URL=https://rama.ciphra.in
+VITE_FRONTEND_URL=https://rama.d0s369.co.in
 VITE_SOCKET_URL=https://chat.api.d0s369.co.in
 VITE_DEBUG_MODE=false
 VITE_LOG_LEVEL=warn

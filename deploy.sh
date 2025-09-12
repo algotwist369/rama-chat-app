@@ -138,7 +138,7 @@ pm2 startup
 
 echo "✅ Deployment completed successfully!"
 echo "🌐 Backend: https://c.api.d0s369.co.in"
-echo "🌐 Frontend: https://chat.ciphra.in"
+echo "🌐 Frontend: https://chat.d0s369.co.in"
 EOF
 
 # Upload and execute deployment script
@@ -152,7 +152,7 @@ rm -f deploy-server.sh
 
 print_status "Deployment completed successfully!"
 print_status "Backend URL: https://c.api.d0s369.co.in"
-print_status "Frontend URL: https://chat.ciphra.in"
+print_status "Frontend URL: https://chat.d0s369.co.in"
 
 echo ""
 echo "Next steps:"

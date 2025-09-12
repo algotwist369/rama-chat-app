@@ -96,10 +96,10 @@ npm run env:prod
   PORT: 5000,
   HOST: '0.0.0.0',
   API_URL: 'https://chat.api.d0s369.co.in',
-  FRONTEND_URL: 'https://rama.ciphra.in',
+  FRONTEND_URL: 'https://rama.d0s369.co.in',
   MONGO_URI: 'mongodb+srv://username:password@cluster.mongodb.net/rama-chat-app',
   JWT_SECRET: 'CHANGE-THIS-TO-A-SECURE-SECRET-IN-PRODUCTION',
-  CORS_ORIGINS: 'https://rama.ciphra.in',
+  CORS_ORIGINS: 'https://rama.d0s369.co.in',
   LOG_LEVEL: 'warn',
   BCRYPT_ROUNDS: 12,
   USE_REDIS: true
@@ -134,7 +134,7 @@ MONGO_URI=mongodb://dev-db:27017/rama-chat-app-dev
 ```env
 # Production settings
 API_URL=https://chat.api.d0s369.co.in
-FRONTEND_URL=https://rama.ciphra.in
+FRONTEND_URL=https://rama.d0s369.co.in
 MONGO_URI=mongodb+srv://user:pass@cluster.mongodb.net/rama-chat-app
 JWT_SECRET=your-super-secure-production-secret
 USE_REDIS=true
