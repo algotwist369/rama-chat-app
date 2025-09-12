@@ -1,0 +1,72 @@
+@import "tailwindcss";
+@import "./styles/smooth-transitions.css";
+
+/* Custom responsive utilities */
+@layer utilities {
+  /* Extra small breakpoint for very small screens */
+  @media (min-width: 475px) {
+    .xs\:inline {
+      display: inline;
+    }
+    .xs\:hidden {
+      display: none;
+    }
+  }
+  
+  
+  /* Improved scrollbar styling */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  
+  
+  
+  
+  
+  
+  
+}
+
+/* Global mobile optimizations */
+@media (max-width: 640px) {
+  /* Better input handling on mobile */
+  input, textarea, select {
+    font-size: 16px; /* Prevents zoom on iOS */
+  }
+  
+  /* Improve button touch targets */
+  button {
+    min-height: 44px;
+  }
+}
+
+/* Dark mode improvements */
+@media (prefers-color-scheme: dark) {
+  .dark\:scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: #4a5568 #2d3748;
+  }
+  
+  .dark\:scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+  }
+  
+  .dark\:scrollbar-thin::-webkit-scrollbar-track {
+    background: #2d3748;
+  }
+  
+  .dark\:scrollbar-thin::-webkit-scrollbar-thumb {
+    background: #4a5568;
+    border-radius: 3px;
+  }
+  
+}
+
+body {
+    background-color: #212529;
+}

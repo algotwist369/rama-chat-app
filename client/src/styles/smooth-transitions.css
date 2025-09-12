@@ -1,0 +1,71 @@
+/* Smooth transitions to prevent UI blinking */
+.smooth-transition {
+    transition: opacity 0.2s ease-in-out, transform 0.2s ease-in-out;
+}
+
+.smooth-fade-in {
+    animation: fadeIn 0.3s ease-in-out;
+}
+
+.smooth-fade-out {
+    animation: fadeOut 0.2s ease-in-out;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes fadeOut {
+    from {
+        opacity: 1;
+        transform: translateY(0);
+    }
+    to {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+}
+
+/* Prevent flash of unstyled content */
+.no-flash {
+    opacity: 0;
+    animation: noFlash 0.1s ease-in-out forwards;
+}
+
+@keyframes noFlash {
+    to {
+        opacity: 1;
+    }
+}
+
+/* Smooth loading states */
+.loading-smooth {
+    transition: all 0.2s ease-in-out;
+}
+
+/* Message list smooth updates */
+.message-list-smooth {
+    transition: height 0.2s ease-in-out;
+}
+
+/* Group selection smooth */
+.group-selection-smooth {
+    transition: background-color 0.15s ease-in-out, transform 0.15s ease-in-out;
+}
+
+/* Sidebar smooth */
+.sidebar-smooth {
+    transition: transform 0.3s ease-in-out, opacity 0.3s ease-in-out;
+}
+
+/* Chat window smooth */
+.chat-window-smooth {
+    transition: opacity 0.2s ease-in-out;
+}
