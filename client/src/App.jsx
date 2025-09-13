@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Toaster } from 'react-hot-toast';
-import { AuthProvider, useAuth } from './context/AuthContext';
+import { AuthProvider, useAuth as useAuthContext } from './context/AuthContext';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
-import AdminPanel from './pages/AdminPanel';
+import AdminPanel from './pages/EnhancedAdminPanel';
+import './styles/chat-animations.css';
 
 const AppContent = () => {
-  const { isAuthenticated, user, loading } = useAuth();
+  const { isAuthenticated, user, loading } = useAuthContext();
   const [currentPage, setCurrentPage] = useState('login');
 
   useEffect(() => {

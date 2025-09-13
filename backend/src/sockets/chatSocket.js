@@ -240,8 +240,27 @@ function initSocket(server, redisAdapter, app) {
     });
 
     socket.on('message:send', async (payload, ack) => {
-      const { text, file, groupId, targetGroups } = payload;
-      const tags = extractTags(text);
+      const { content, file, groupId, targetGroups, replyTo } = payload; // Use 'content' instead of 'text'
+      
+      // Debug logging
+      console.log('Socket: Received message payload:', {
+        content: content,
+        contentLength: content ? content.length : 0,
+        hasFile: file && file.url,
+        groupId: groupId
+      });
+      
+      // Validate message content
+      const hasValidContent = content && content.trim().length > 0;
+      const hasFile = file && file.url;
+      
+      if (!hasValidContent && !hasFile) {
+        console.log('Socket: Rejecting empty message');
+        if (ack) ack({ error: 'Message content is required' });
+        return;
+      }
+      
+      const tags = extractTags(content); // Use 'content' instead of 'text'
 
       // Use the groupId from payload or user's default group
       const targetGroupId = groupId || user.groupId;
@@ -260,9 +279,11 @@ function initSocket(server, redisAdapter, app) {
       const msg = await Message.create({
         senderId: user._id,
         groupId: targetGroupId,
-        text,
-        file,
+        content: content, // Use 'content' field instead of 'text'
+        messageType: hasFile ? (file.type?.startsWith('image/') ? 'image' : 'file') : 'text', // Set correct message type
+        file: hasFile ? file : null, // Only set file if it exists
         tags,
+        replyTo: replyTo || null,
         forwardedToGroups: forwardedGroups.map(g => g._id)
       });
 
@@ -286,8 +307,9 @@ function initSocket(server, redisAdapter, app) {
         const forwardedMsg = await Message.create({
           senderId: user._id,
           groupId: group._id,
-          text,
-          file,
+          content: content, // Use 'content' field instead of 'text'
+          messageType: hasFile ? (file.type?.startsWith('image/') ? 'image' : 'file') : 'text', // Set correct message type
+          file: hasFile ? file : null, // Only set file if it exists
           tags,
           forwardedFrom: msg._id,
           forwardedToGroups: forwardedGroups.map(g => g._id)
@@ -320,7 +342,7 @@ function initSocket(server, redisAdapter, app) {
         const notification = {
           type: 'message',
           title: `New message from ${user.username}`,
-          message: text || 'Sent a file',
+          message: content || 'Sent a file', // Use 'content' instead of 'text'
           groupId: targetGroupId,
           groupName: group.name,
           senderId: user._id,
@@ -368,7 +390,7 @@ function initSocket(server, redisAdapter, app) {
           const forwardedNotification = {
             type: 'message',
             title: `New message from ${user.username} (from ${group.name})`,
-            message: text || 'Sent a file',
+            message: content || 'Sent a file', // Use 'content' instead of 'text'
             groupId: forwardedGroup._id,
             groupName: forwardedGroup.name,
             senderId: user._id,
@@ -405,36 +427,245 @@ function initSocket(server, redisAdapter, app) {
       console.log(`✅ Message sent successfully - Group: ${targetGroupId}, Forwarded to: ${forwardedMessages.length} groups`);
     });
 
+    // Handle message reactions
+    socket.on('message:react', async ({ messageId, emoji, groupId }) => {
+      try {
+        const message = await Message.findById(messageId);
+        if (!message || message.groupId.toString() !== groupId) {
+          socket.emit('error', { message: 'Message not found' });
+          return;
+        }
+
+        // Check if user already reacted with this emoji
+        const existingReaction = message.reactions.find(
+          r => r.user.toString() === socket.userId && r.emoji === emoji
+        );
+
+        if (existingReaction) {
+          // Remove reaction
+          message.reactions = message.reactions.filter(
+            r => !(r.user.toString() === socket.userId && r.emoji === emoji)
+          );
+        } else {
+          // Add reaction
+          message.reactions.push({
+            user: socket.userId,
+            emoji: emoji,
+            createdAt: new Date()
+          });
+        }
+
+        await message.save();
+
+        // Emit reaction update to all group members
+        io.to(`group:${groupId}`).emit('message:reaction', {
+          messageId,
+          reactions: message.reactions,
+          userId: socket.userId,
+          emoji,
+          action: existingReaction ? 'removed' : 'added',
+          timestamp: new Date()
+        });
+
+        console.log(`🎭 Reaction ${existingReaction ? 'removed' : 'added'} to message ${messageId}`);
+      } catch (error) {
+        console.error('Error handling reaction:', error);
+        socket.emit('error', { message: 'Failed to update reaction' });
+      }
+    });
+
+    // Handle message editing
+    socket.on('message:edit', async ({ messageId, content, groupId }) => {
+      try {
+        const message = await Message.findById(messageId);
+        if (!message || message.groupId.toString() !== groupId) {
+          socket.emit('error', { message: 'Message not found' });
+          return;
+        }
+
+        if (message.senderId.toString() !== socket.userId) {
+          socket.emit('error', { message: 'Not authorized to edit this message' });
+          return;
+        }
+
+        const editTimeLimit = 15 * 60 * 1000; // 15 minutes
+        if (Date.now() - message.createdAt.getTime() > editTimeLimit) {
+          socket.emit('error', { message: 'Message too old to edit' });
+          return;
+        }
+
+        message.content = content;
+        message.tags = extractTags(content);
+        message.edited = { 
+          isEdited: true, 
+          editedAt: new Date(),
+          editCount: (message.edited?.editCount || 0) + 1
+        };
+
+        await message.save();
+
+        // Emit edit update to all group members
+        io.to(`group:${groupId}`).emit('message:edited', {
+          messageId,
+          content,
+          edited: message.edited,
+          timestamp: new Date()
+        });
+
+        console.log(`✏️ Message edited: ${messageId}`);
+      } catch (error) {
+        console.error('Error editing message:', error);
+        socket.emit('error', { message: 'Failed to edit message' });
+      }
+    });
+
+    // Handle message deletion
+    socket.on('message:delete', async ({ messageId, groupId, reason = 'user' }) => {
+      try {
+        const message = await Message.findById(messageId);
+        if (!message || message.groupId.toString() !== groupId) {
+          socket.emit('error', { message: 'Message not found' });
+          return;
+        }
+
+        // Check if user can delete (sender, manager, or admin)
+        const group = await Group.findById(groupId);
+        const isSender = message.senderId.toString() === socket.userId;
+        const isManager = group.managers.some(id => id.toString() === socket.userId);
+        const isAdmin = socket.userRole === 'admin';
+
+        if (!isSender && !isManager && !isAdmin) {
+          socket.emit('error', { message: 'Not authorized to delete this message' });
+          return;
+        }
+
+        message.deleted = {
+          isDeleted: true,
+          deletedBy: socket.userId,
+          deletedAt: new Date(),
+          deleteReason: reason
+        };
+
+        await message.save();
+
+        // Emit deletion update to all group members
+        io.to(`group:${groupId}`).emit('message:deleted', {
+          messageId,
+          deletedBy: socket.userId,
+          deleteReason: reason,
+          timestamp: new Date()
+        });
+
+        console.log(`🗑️ Message deleted: ${messageId} by ${socket.userId}`);
+      } catch (error) {
+        console.error('Error deleting message:', error);
+        socket.emit('error', { message: 'Failed to delete message' });
+      }
+    });
+
+    // Handle message delivery status
+    socket.on('message:delivered', async ({ messageId, groupId, messageIds }) => {
+      try {
+        console.log(`📨 Delivery request from ${socket.userId} for group ${groupId}:`, { messageId, messageIds });
+        
+        // Handle bulk message delivery for better performance
+        if (messageIds && Array.isArray(messageIds)) {
+          const updatePromises = messageIds.map(id => 
+            Message.updateOne(
+              { _id: id, groupId, 'deliveredTo.user': { $ne: socket.userId } },
+              { $addToSet: { deliveredTo: { user: socket.userId, deliveredAt: new Date() } } }
+            )
+          );
+          
+          const results = await Promise.all(updatePromises);
+          const updatedCount = results.filter(r => r.modifiedCount > 0).length;
+          
+          console.log(`📨 Updated ${updatedCount} messages as delivered for user ${socket.userId}`);
+          
+          // Only emit if we actually updated something
+          if (updatedCount > 0) {
+            // Emit bulk delivery status only to other users in the group (not back to sender)
+            socket.to(`group:${groupId}`).emit('messages:delivered', {
+              messageIds,
+              userId: socket.userId,
+              timestamp: new Date()
+            });
+          }
+        } else if (messageId) {
+          // Handle single message delivery
+          const message = await Message.findById(messageId);
+          if (message && message.groupId.toString() === groupId) {
+            const alreadyDelivered = message.deliveredTo.some(
+              d => d.user.toString() === socket.userId
+            );
+            
+            if (!alreadyDelivered) {
+              message.deliveredTo.push({
+                user: socket.userId,
+                deliveredAt: new Date()
+              });
+              await message.save();
+              
+              // Emit delivery status to other group members (not back to sender)
+              socket.to(`group:${groupId}`).emit('message:delivered', {
+                messageId,
+                deliveredTo: message.deliveredTo,
+                userId: socket.userId,
+                timestamp: new Date()
+              });
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error handling delivery status:', error);
+      }
+    });
+
     // Handle message seen status (optimized for large groups)
     socket.on('message:seen', async ({ messageId, groupId, messageIds }) => {
       try {
+        console.log(`👁️ Seen request from ${socket.userId} for group ${groupId}:`, { messageId, messageIds });
+        
         // Handle bulk message seen for better performance
         if (messageIds && Array.isArray(messageIds)) {
           const updatePromises = messageIds.map(id => 
             Message.updateOne(
-              { _id: id, groupId, seenBy: { $ne: socket.userId } },
-              { $addToSet: { seenBy: socket.userId } }
+              { _id: id, groupId, 'seenBy.user': { $ne: socket.userId } },
+              { $addToSet: { seenBy: { user: socket.userId, seenAt: new Date() } } }
             )
           );
           
-          await Promise.all(updatePromises);
+          const results = await Promise.all(updatePromises);
+          const updatedCount = results.filter(r => r.modifiedCount > 0).length;
           
-          // Emit bulk seen status
-          io.to(`group:${groupId}`).emit('messages:seen', {
-            messageIds,
-            userId: socket.userId,
-            timestamp: new Date()
-          });
+          console.log(`👁️ Updated ${updatedCount} messages as seen for user ${socket.userId}`);
+          
+          // Only emit if we actually updated something
+          if (updatedCount > 0) {
+            // Emit bulk seen status only to other users in the group (not back to sender)
+            socket.to(`group:${groupId}`).emit('messages:seen', {
+              messageIds,
+              userId: socket.userId,
+              timestamp: new Date()
+            });
+          }
         } else if (messageId) {
           // Handle single message seen
           const message = await Message.findById(messageId);
           if (message && message.groupId.toString() === groupId) {
-            if (!message.seenBy.includes(socket.userId)) {
-              message.seenBy.push(socket.userId);
+            const alreadySeen = message.seenBy.some(
+              s => s.user.toString() === socket.userId
+            );
+            
+            if (!alreadySeen) {
+              message.seenBy.push({
+                user: socket.userId,
+                seenAt: new Date()
+              });
               await message.save();
               
-              // Emit seen status to all group members
-              io.to(`group:${groupId}`).emit('message:seen', {
+              // Emit seen status to other group members (not back to sender)
+              socket.to(`group:${groupId}`).emit('message:seen', {
                 messageId,
                 seenBy: message.seenBy,
                 userId: socket.userId,

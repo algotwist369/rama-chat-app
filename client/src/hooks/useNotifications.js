@@ -29,7 +29,7 @@ export const useNotifications = () => {
   const markNotificationsAsSeen = useCallback(async () => {
     try {
       console.log('Marking notifications as seen...');
-      await notificationApi.markAsSeen();
+      await notificationApi.markNotificationsAsSeen();
       console.log('Notifications marked as seen successfully');
     } catch (error) {
       console.error('Error marking notifications as seen:', error);

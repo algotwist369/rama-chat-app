@@ -1,86 +1,106 @@
 const express = require('express');
 const router = express.Router();
 const { getNotifications, clearNotifications, markNotificationsAsSeen } = require('../services/notificationService');
-const authenticateToken = require('../middleware/authMiddleware');
+const auth = require('../middleware/authMiddleware');
+const { asyncHandler } = require('../middleware/errorHandler');
+const { messageLimiter } = require('../middleware/rateLimiter');
+const { logger } = require('../utils/logger');
 
 // Get user notifications
-router.get('/', authenticateToken, async (req, res) => {
-    try {
-        const notifications = await getNotifications(req.user.id);
+router.get('/', 
+    auth, 
+    messageLimiter, 
+    asyncHandler(async (req, res) => {
+        const notifications = await getNotifications(req.user._id);
+        
+        logger.business('Notifications fetched', {
+            userId: req.user._id,
+            notificationCount: notifications.length
+        });
+        
         res.json({ notifications });
-    } catch (error) {
-        console.error('Error fetching notifications:', error);
-        res.status(500).json({ error: 'Failed to fetch notifications' });
-    }
-});
+    })
+);
 
 // Mark notifications as seen
-router.patch('/seen', authenticateToken, async (req, res) => {
-    try {
-        console.log('PATCH /seen route hit for user:', req.user.id);
-        await markNotificationsAsSeen(req.user.id);
-        console.log('Notifications marked as seen successfully for user:', req.user.id);
+router.patch('/seen', 
+    auth, 
+    messageLimiter, 
+    asyncHandler(async (req, res) => {
+        await markNotificationsAsSeen(req.user._id);
+        
+        logger.business('Notifications marked as seen', {
+            userId: req.user._id
+        });
+        
         res.json({ message: 'Notifications marked as seen successfully' });
-    } catch (error) {
-        console.error('Error marking notifications as seen:', error);
-        res.status(500).json({ error: 'Failed to mark notifications as seen' });
-    }
-});
+    })
+);
 
 // Clear all notifications
-router.delete('/', authenticateToken, async (req, res) => {
-    try {
-        await clearNotifications(req.user.id);
-        res.json({ message: 'Notifications cleared successfully' });
-    } catch (error) {
-        console.error('Error clearing notifications:', error);
-        res.status(500).json({ error: 'Failed to clear notifications' });
-    }
-});
-
-// Test endpoint to create sample notifications
-router.post('/test', authenticateToken, async (req, res) => {
-    try {
-        const { sendNotification } = require('../services/notificationService');
+router.delete('/', 
+    auth, 
+    messageLimiter, 
+    asyncHandler(async (req, res) => {
+        await clearNotifications(req.user._id);
         
-        const testNotifications = [
-            {
-                type: 'message',
-                title: 'New message from John Doe',
-                message: 'Hey, how are you doing?',
-                groupId: '507f1f77bcf86cd799439011',
-                groupName: 'General Chat',
-                senderId: '507f1f77bcf86cd799439012',
-                senderUsername: 'John Doe',
-                createdAt: new Date()
-            },
-            {
-                type: 'user_joined',
-                title: 'Alice joined the group',
-                message: 'Alice has joined General Chat',
-                groupId: '507f1f77bcf86cd799439011',
-                groupName: 'General Chat',
-                createdAt: new Date()
-            },
-            {
-                type: 'user_left',
-                title: 'Bob left the group',
-                message: 'Bob has left General Chat',
-                groupId: '507f1f77bcf86cd799439011',
-                groupName: 'General Chat',
-                createdAt: new Date()
+        logger.business('Notifications cleared', {
+            userId: req.user._id
+        });
+        
+        res.json({ message: 'Notifications cleared successfully' });
+    })
+);
+
+// Test endpoint to create sample notifications (remove in production)
+if (process.env.NODE_ENV === 'development') {
+    router.post('/test', 
+        auth, 
+        messageLimiter, 
+        asyncHandler(async (req, res) => {
+            const { sendNotification } = require('../services/notificationService');
+            
+            const testNotifications = [
+                {
+                    type: 'message',
+                    title: 'New message from John Doe',
+                    message: 'Hey, how are you doing?',
+                    groupId: '507f1f77bcf86cd799439011',
+                    groupName: 'General Chat',
+                    senderId: '507f1f77bcf86cd799439012',
+                    senderUsername: 'John Doe',
+                    createdAt: new Date()
+                },
+                {
+                    type: 'user_joined',
+                    title: 'Alice joined the group',
+                    message: 'Alice has joined General Chat',
+                    groupId: '507f1f77bcf86cd799439011',
+                    groupName: 'General Chat',
+                    createdAt: new Date()
+                },
+                {
+                    type: 'user_left',
+                    title: 'Bob left the group',
+                    message: 'Bob has left General Chat',
+                    groupId: '507f1f77bcf86cd799439011',
+                    groupName: 'General Chat',
+                    createdAt: new Date()
+                }
+            ];
+
+            for (const notification of testNotifications) {
+                await sendNotification(req.user._id, notification);
             }
-        ];
 
-        for (const notification of testNotifications) {
-            await sendNotification(req.user.id, notification);
-        }
+            logger.business('Test notifications created', {
+                userId: req.user._id,
+                notificationCount: testNotifications.length
+            });
 
-        res.json({ message: 'Test notifications created successfully' });
-    } catch (error) {
-        console.error('Error creating test notifications:', error);
-        res.status(500).json({ error: 'Failed to create test notifications' });
-    }
-});
+            res.json({ message: 'Test notifications created successfully' });
+        })
+    );
+}
 
 module.exports = router;

@@ -105,9 +105,10 @@ export const useFileUpload = () => {
             const uploadedFile = response.data.file;
             
             const messageData = {
-                text: `📎 ${uploadedFile.originalname}`,
+                content: `📎 ${uploadedFile.originalname}`, // Use 'content' field instead of 'text'
                 file: uploadedFile,
-                groupId: groupId
+                groupId: groupId,
+                messageType: uploadedFile.type?.startsWith('image/') ? 'image' : 'file' // Set correct message type based on file type
             };
 
             onSendMessage(messageData, (response) => {

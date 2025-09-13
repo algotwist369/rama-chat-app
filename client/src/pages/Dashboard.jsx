@@ -1,31 +1,45 @@
 
-import React, { useState, useEffect, useRef, useCallback, useReducer, useMemo, Suspense, lazy } from 'react'
+import React, { useState, useEffect, useRef, useCallback, useReducer, useMemo, Suspense, lazy, memo } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { groupApi } from '../api/groupApi'
 import { messageApi } from '../api/messageApi'
 import { notificationApi } from '../api/notificationApi'
 import socketService from '../sockets/socket'
-import { Menu, X, Bell } from 'lucide-react'
+import { Menu, X, Bell, Wifi, WifiOff, AlertCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import soundManager from '../utils/soundManager'
 import { usePerformanceMonitor, useMemoryMonitor, useNetworkMonitor } from '../hooks/usePerformanceMonitor'
 
 // Lazy load components for better performance
-const Sidebar = lazy(() => import('../components/Sidebar'))
+const Sidebar = lazy(() => import('../components/EnhancedSidebar'))
 const ChatWindow = lazy(() => import('../components/ChatWindow'))
-const NotificationPanel = lazy(() => import('../components/NotificationPanel'))
+const NotificationPanel = lazy(() => import('../components/EnhancedNotificationPanel'))
 const ErrorBoundary = lazy(() => import('../components/ErrorBoundary'))
 
-// Debounce utility function
-const debounce = (func, wait) => {
+// Optimized debounce utility function with immediate execution option
+const debounce = (func, wait, immediate = false) => {
     let timeout;
     return function executedFunction(...args) {
         const later = () => {
-            clearTimeout(timeout);
-            func(...args);
+            timeout = null;
+            if (!immediate) func(...args);
         };
+        const callNow = immediate && !timeout;
         clearTimeout(timeout);
         timeout = setTimeout(later, wait);
+        if (callNow) func(...args);
+    };
+};
+
+// Throttle utility for high-frequency events
+const throttle = (func, limit) => {
+    let inThrottle;
+    return function executedFunction(...args) {
+        if (!inThrottle) {
+            func.apply(this, args);
+            inThrottle = true;
+            setTimeout(() => inThrottle = false, limit);
+        }
     };
 };
 
@@ -92,13 +106,17 @@ const dashboardReducer = (state, action) => {
     }
 };
 
-const Dashboard = () => {
+const Dashboard = memo(() => {
     const { user, token, logout } = useAuth()
 
     // Performance monitoring
     const { measureOperation, markMilestone } = usePerformanceMonitor('Dashboard')
     useMemoryMonitor()
     useNetworkMonitor()
+
+    // Refs for performance optimization
+    const resizeObserverRef = useRef(null)
+    const intersectionObserverRef = useRef(null)
 
     // Use reducer for complex state management
     const [state, dispatch] = useReducer(dashboardReducer, {
@@ -134,6 +152,9 @@ const Dashboard = () => {
 
     // Local state for UI interactions
     const [editingMessage, setEditingMessage] = useState(null)
+    const [replyingMessage, setReplyingMessage] = useState(null)
+    const [messagePrivacy, setMessagePrivacy] = useState(null)
+    const [processedMessageIds, setProcessedMessageIds] = useState(new Set())
     const [notificationPermission, setNotificationPermission] = useState('default')
     const [showNotificationPanel, setShowNotificationPanel] = useState(false)
     const [isSidebarOpen, setIsSidebarOpen] = useState(false)
@@ -181,6 +202,46 @@ const Dashboard = () => {
         }
     }, [messageCache]);
 
+    // Optimized resize handler for responsive behavior
+    const handleResize = useCallback(
+        throttle(() => {
+            // Handle responsive layout changes
+            if (window.innerWidth >= 1024) {
+                setIsSidebarOpen(false); // Close mobile sidebar on desktop
+            }
+        }, 250),
+        []
+    );
+
+    // Setup resize observer for better performance
+    useEffect(() => {
+        if (typeof ResizeObserver !== 'undefined') {
+            resizeObserverRef.current = new ResizeObserver(
+                throttle((entries) => {
+                    // Handle container resize events
+                    entries.forEach((entry) => {
+                        // Optimize layout based on container size
+                        if (entry.contentRect.width < 768) {
+                            // Mobile optimizations
+                        } else if (entry.contentRect.width < 1024) {
+                            // Tablet optimizations
+                        } else {
+                            // Desktop optimizations
+                        }
+                    });
+                }, 100)
+            );
+        }
+
+        window.addEventListener('resize', handleResize);
+        return () => {
+            window.removeEventListener('resize', handleResize);
+            if (resizeObserverRef.current) {
+                resizeObserverRef.current.disconnect();
+            }
+        };
+    }, [handleResize]);
+
     // Run cache optimization periodically
     useEffect(() => {
         const interval = setInterval(optimizeMessageCache, 60000); // Every minute
@@ -211,7 +272,7 @@ const Dashboard = () => {
                 // Find the group in the current groups list
                 const foundGroup = groups.find(g => g._id === groupData._id)
                 if (foundGroup) {
-                    setSelectedGroup(foundGroup)
+                    dispatch({ type: 'SET_SELECTED_GROUP', payload: foundGroup })
                     return foundGroup
                 }
             }
@@ -233,14 +294,20 @@ const Dashboard = () => {
             requestNotificationPermission()
 
 
-            // Set up socket event listeners
+            // Set up socket event listeners (only once)
             const setupSocketListeners = () => {
+                // Remove existing listeners first to prevent duplicates
+                socketService.removeAllListeners()
+                
                 socketService.on('message:new', handleNewMessage)
                 socketService.on('message:edited', handleMessageEdited)
                 socketService.on('message:deleted', handleMessageDeleted)
                 socketService.on('messages:deleted', handleMultipleMessagesDeleted)
                 socketService.on('message:delivered', handleMessageDelivered)
                 socketService.on('message:seen', handleMessageSeen)
+                socketService.on('message:reaction', handleMessageReaction)
+                socketService.on('messages:delivered', handleBulkMessagesDelivered)
+                socketService.on('messages:seen', handleBulkMessagesSeen)
                 // Typing indicators are now handled in ChatWindow component
                 // Online status is handled by individual components (ChatWindow, AdminPanel)
                 socketService.on('user:joined', handleUserJoined)
@@ -252,34 +319,41 @@ const Dashboard = () => {
                 socketService.on('role:updated', handleRoleUpdated)
             }
 
-            // Set up listeners immediately if socket is already connected
-            if (socketService.getSocket()?.connected) {
-                setupSocketListeners()
+            // Set up listeners only once when socket connects
+            socketService.on('connect', () => {
+                console.log('🔌 Socket connected, setting up listeners');
                 dispatch({ type: 'SET_SOCKET_STATUS', payload: 'connected' })
+                setupSocketListeners()
+            })
+            
+            // Add socket disconnect handler
+            socketService.on('disconnect', () => {
+                console.log('🔌 Socket disconnected');
+                dispatch({ type: 'SET_SOCKET_STATUS', payload: 'disconnected' })
+            })
+            
+            // Set initial status
+            if (socketService.getSocket()?.connected) {
+                dispatch({ type: 'SET_SOCKET_STATUS', payload: 'connected' })
+                setupSocketListeners()
             } else {
                 dispatch({ type: 'SET_SOCKET_STATUS', payload: 'connecting' })
-                // Set up listeners when socket connects
-                socketService.on('connect', () => {
-                    dispatch({ type: 'SET_SOCKET_STATUS', payload: 'connected' })
-                    setupSocketListeners()
-                })
-
-                socketService.on('disconnect', () => {
-                    dispatch({ type: 'SET_SOCKET_STATUS', payload: 'disconnected' })
-                })
-
-                socketService.on('connect_error', (error) => {
-                    console.error('Socket connection error in Dashboard:', error);
-                    dispatch({ type: 'SET_SOCKET_STATUS', payload: 'error' });
-
-                    // Handle authentication errors
-                    if (error.message === 'unauth') {
-                        console.error('Socket authentication failed, logging out user');
-                        logout();
-                    }
-                })
             }
 
+            socketService.on('disconnect', () => {
+                dispatch({ type: 'SET_SOCKET_STATUS', payload: 'disconnected' })
+            })
+
+            socketService.on('connect_error', (error) => {
+                console.error('Socket connection error in Dashboard:', error);
+                dispatch({ type: 'SET_SOCKET_STATUS', payload: 'error' });
+
+                // Handle authentication errors
+                if (error.message === 'unauth') {
+                    console.error('Socket authentication failed, logging out user');
+                    logout();
+                }
+            })
 
             return () => {
                 // Clean up all listeners
@@ -313,6 +387,7 @@ const Dashboard = () => {
             }
 
             // Join the group room for real-time updates
+            console.log('🔗 Joining group room for real-time updates:', selectedGroup._id);
             socketService.joinGroup(selectedGroup._id)
         }
     }, [selectedGroup])
@@ -339,7 +414,8 @@ const Dashboard = () => {
                 .map(msg => msg._id)
 
             if (unreadMessageIds.length > 0) {
-                messageApi.markAsSeen(unreadMessageIds).catch(console.error)
+                // Use socket instead of HTTP API to avoid rate limiting
+                socketService.markAsSeen(null, selectedGroup._id, unreadMessageIds)
             }
 
             // Clear unread count for selected group
@@ -395,6 +471,12 @@ const Dashboard = () => {
         const maxRetries = 2;
 
         try {
+            // Validate group membership before attempting to load messages
+            const selectedGroup = groups.find(g => g._id === groupId);
+            if (!selectedGroup) {
+                console.warn('Group not found in user groups, skipping message load');
+                return;
+            }
             // Only show loading states for initial load, not for cache restoration or background loads
             if (chunkNumber === 1 && !backgroundLoad && !hasCachedMessages(groupId)) {
                 dispatch({ type: 'SET_LOADING', payload: true })
@@ -414,6 +496,7 @@ const Dashboard = () => {
             const response = await messageApi.getMessages(groupId, params)
             const newMessages = response.messages || []
             const chunk = response.chunk || {}
+            const privacy = response.privacy || {}
 
             if (chunkNumber === 1 || resetMessages) {
                 // Always update cache for first chunk or reset
@@ -438,16 +521,88 @@ const Dashboard = () => {
                     // and if we don't already have messages (to avoid overwriting cache)
                     if (selectedGroup?._id === groupId && messages.length === 0) {
                         console.log('Background load updating messages for group:', groupId, 'New messages:', newMessages.length)
-                        dispatch({ type: 'SET_MESSAGES', payload: newMessages })
+                        dispatch({ 
+                            type: 'SET_MESSAGES', 
+                            payload: prev => {
+                                // Merge with existing messages to prevent duplicates
+                                const existingIds = new Set(prev.map(msg => msg._id.toString()));
+                                const uniqueNewMessages = newMessages.filter(msg => !existingIds.has(msg._id.toString()));
+                                
+                                if (uniqueNewMessages.length > 0) {
+                                    console.log(`📥 Background loading ${uniqueNewMessages.length} new messages from database`);
+                                    // Mark these messages as processed
+                                    const newIds = uniqueNewMessages.map(msg => msg._id.toString());
+                                    setProcessedMessageIds(prev => new Set([...prev, ...newIds]));
+                                    return [...prev, ...uniqueNewMessages];
+                                }
+                                
+                                return prev;
+                            }
+                        })
+                        
+                        // Show privacy notification for new users even in background load
+                        if (privacy.messagePrivacyEnabled && privacy.note) {
+                            toast.info(privacy.note, {
+                                duration: 5000,
+                                position: 'top-center'
+                            })
+                        }
+                        
+                        // Store privacy information for UI display
+                        setMessagePrivacy(privacy)
                     }
                 } else {
-                    // Regular load - always update messages
+                    // Regular load - merge with existing messages to prevent duplicates
                     console.log('Regular load updating messages for group:', groupId, 'New messages:', newMessages.length)
-                    dispatch({ type: 'SET_MESSAGES', payload: newMessages })
+                    dispatch({ 
+                        type: 'SET_MESSAGES', 
+                        payload: prev => {
+                            // Merge new messages with existing ones, avoiding duplicates
+                            const existingIds = new Set(prev.map(msg => msg._id.toString()));
+                            const uniqueNewMessages = newMessages.filter(msg => !existingIds.has(msg._id.toString()));
+                            
+                            if (uniqueNewMessages.length > 0) {
+                                console.log(`📥 Loading ${uniqueNewMessages.length} new messages from database`);
+                                // Mark these messages as processed
+                                const newIds = uniqueNewMessages.map(msg => msg._id.toString());
+                                setProcessedMessageIds(prev => new Set([...prev, ...newIds]));
+                                return [...prev, ...uniqueNewMessages];
+                            }
+                            
+                            return prev;
+                        }
+                    })
+                    
+                    // Show privacy notification for new users
+                    if (privacy.messagePrivacyEnabled && privacy.note) {
+                        toast.info(privacy.note, {
+                            duration: 5000,
+                            position: 'top-center'
+                        })
+                    }
+                    
+                    // Store privacy information for UI display
+                    setMessagePrivacy(privacy)
                 }
             } else {
-                // For chunking, add older messages to the beginning
-                dispatch({ type: 'SET_MESSAGES', payload: prev => [...newMessages, ...prev] })
+                // For chunking, add older messages to the beginning, avoiding duplicates
+                dispatch({ 
+                    type: 'SET_MESSAGES', 
+                    payload: prev => {
+                        const existingIds = new Set(prev.map(msg => msg._id.toString()));
+                        const uniqueNewMessages = newMessages.filter(msg => !existingIds.has(msg._id.toString()));
+                        
+                        if (uniqueNewMessages.length > 0) {
+                            console.log(`📥 Loading ${uniqueNewMessages.length} older messages from database`);
+                            // Mark these messages as processed
+                            const newIds = uniqueNewMessages.map(msg => msg._id.toString());
+                            setProcessedMessageIds(prev => new Set([...prev, ...newIds]));
+                            return [...uniqueNewMessages, ...prev];
+                        }
+                        
+                        return prev;
+                    }
+                })
 
                 // Update cache with new messages
                 dispatch({
@@ -485,13 +640,35 @@ const Dashboard = () => {
                 return
             }
 
-            if (!backgroundLoad) {
+            // Only show error toasts for non-background loads and actual errors
+            if (!backgroundLoad && error.response?.status !== 200) {
                 // Provide more specific error messages
                 if (error.response?.status === 500) {
                     toast.error('Server error. Please try again later.')
+                } else if (error.response?.status === 403) {
+                    // Handle authorization errors specifically
+                    const errorMessage = typeof error.response.data.error === 'string' 
+                        ? error.response.data.error 
+                        : error.response.data.error.message || 'Not authorized to view messages';
+                    
+                    toast.error('Access denied: You are not a member of this group');
+                    
+                    // Clear the selected group and refresh groups list
+                    dispatch({ type: 'SET_SELECTED_GROUP', payload: null });
+                    saveSelectedGroup(null);
+                    
+                    // Refresh groups to get updated membership
+                    setTimeout(() => {
+                        loadGroups();
+                    }, 1000);
                 } else if (error.response?.data?.error) {
-                    toast.error(error.response.data.error)
-                } else {
+                    // Handle both string and object error formats
+                    const errorMessage = typeof error.response.data.error === 'string' 
+                        ? error.response.data.error 
+                        : error.response.data.error.message || 'Failed to load messages';
+                    toast.error(errorMessage);
+                } else if (error.response?.status >= 400) {
+                    // Only show generic error for actual HTTP errors
                     toast.error('Failed to load messages')
                 }
             }
@@ -505,9 +682,28 @@ const Dashboard = () => {
         }
     }, [selectedGroup, hasCachedMessages])
 
-    // Debounced socket event handlers to prevent excessive updates
+    // Optimized socket event handlers with better debouncing
     const debouncedHandleNewMessage = useCallback(
         debounce((message) => {
+            const messageId = message._id.toString();
+            
+            // Check if we've already processed this message
+            if (processedMessageIds.has(messageId)) {
+                console.log('🚫 Message already processed, skipping:', messageId);
+                return;
+            }
+            
+            // Mark message as processed
+            setProcessedMessageIds(prev => {
+                const newSet = new Set([...prev, messageId]);
+                // Keep only the last 1000 message IDs to prevent memory issues
+                if (newSet.size > 1000) {
+                    const array = Array.from(newSet);
+                    return new Set(array.slice(-1000));
+                }
+                return newSet;
+            });
+            
             // Check if this message is already in the messages array to prevent duplicates
             dispatch({
                 type: 'SET_MESSAGES', payload: prev => {
@@ -515,9 +711,39 @@ const Dashboard = () => {
                         msg._id === message._id || msg._id.toString() === message._id.toString()
                     );
                     if (messageExists) {
+                        console.log('🚫 Duplicate message detected, skipping:', messageId);
                         return prev;
                     }
-                    return [...prev, message];
+                    
+                    // Add message if it's for the currently selected group OR if it's from the current user
+                    const isCurrentUserMessage = message.senderId._id === user.id || message.senderId._id === user._id;
+                    const isCurrentGroupMessage = selectedGroup && message.groupId === selectedGroup._id;
+                    
+                    console.log('🔍 Message filtering details:', {
+                        messageId,
+                        senderId: message.senderId._id,
+                        currentUserId: user.id,
+                        messageGroupId: message.groupId,
+                        selectedGroupId: selectedGroup?._id,
+                        isCurrentUserMessage,
+                        isCurrentGroupMessage,
+                        shouldAdd: isCurrentGroupMessage || isCurrentUserMessage
+                    });
+                    
+                    if (isCurrentGroupMessage || isCurrentUserMessage) {
+                        console.log('✅ Adding new message via socket:', messageId, 'isCurrentUser:', isCurrentUserMessage, 'isCurrentGroup:', isCurrentGroupMessage);
+                        
+                        // If this is a message from the current user, remove any optimistic messages
+                        if (isCurrentUserMessage) {
+                            const filteredPrev = prev.filter(msg => !msg.isOptimistic);
+                            return [...filteredPrev, message];
+                        }
+                        
+                        return [...prev, message];
+                    }
+                    
+                    console.log('🚫 Message not for current group or user, skipping:', messageId);
+                    return prev;
                 }
             });
 
@@ -532,10 +758,13 @@ const Dashboard = () => {
                                 msg._id === message._id || msg._id.toString() === message._id.toString()
                             );
                             if (!messageExists) {
+                                console.log('✅ Adding message to cache:', message._id);
                                 return {
                                     ...groupCache,
                                     messages: [...groupCache.messages, message]
                                 };
+                            } else {
+                                console.log('🚫 Message already in cache, skipping:', message._id);
                             }
                         }
                         return groupCache;
@@ -545,7 +774,8 @@ const Dashboard = () => {
 
             // Mark as delivered if not from current user
             if (message.senderId._id !== user.id && message.senderId._id !== user._id) {
-                messageApi.markAsDelivered([message._id]).catch(() => { })
+                // Use socket instead of HTTP API to avoid rate limiting
+                socketService.markAsDelivered(null, message.groupId, [message._id])
 
                 // Play appropriate sound
                 if (selectedGroup && message.groupId === selectedGroup._id) {
@@ -564,7 +794,8 @@ const Dashboard = () => {
 
                 // Mark as seen if user is currently viewing this group
                 if (selectedGroup && selectedGroup._id === message.groupId) {
-                    messageApi.markAsSeen([message._id]).catch(() => { })
+                    // Use socket instead of HTTP API to avoid rate limiting
+                    socketService.markAsSeen(null, message.groupId, [message._id])
                     // Clear unread count for current group
                     dispatch({
                         type: 'UPDATE_UNREAD_COUNT', payload: {
@@ -578,18 +809,26 @@ const Dashboard = () => {
                 if (document.hidden) {
                     showNotification(
                         `New message from ${message.senderId.username}`,
-                        message.text || 'Sent a file',
+                        message.content || 'Sent a file', // Use 'content' field instead of 'text'
                         '/favicon.ico'
                     )
                 }
             }
         }, 100),
-        [selectedGroup, user.id, user._id, unreadCounts]
+        [selectedGroup, user.id, user._id, unreadCounts, processedMessageIds]
     );
 
     const handleNewMessage = useCallback((message) => {
+        console.log('🔔 Socket message received:', {
+            messageId: message._id,
+            senderId: message.senderId._id,
+            currentUserId: user.id,
+            groupId: message.groupId,
+            selectedGroupId: selectedGroup?._id,
+            content: message.content?.substring(0, 50) + '...'
+        });
         debouncedHandleNewMessage(message);
-    }, [debouncedHandleNewMessage])
+    }, [debouncedHandleNewMessage, user.id, selectedGroup?._id])
 
     const handleMessageEdited = useCallback((editedMessage) => {
         dispatch({
@@ -787,6 +1026,69 @@ const Dashboard = () => {
         }
     }, [notificationCount, selectedGroup?._id])
 
+    // Handle message reactions
+    const handleMessageReaction = useCallback(({ messageId, reactions, userId, emoji, action }) => {
+        dispatch({
+            type: 'SET_MESSAGES', payload: prev =>
+                prev.map(msg =>
+                    msg._id === messageId ? { ...msg, reactions } : msg
+                )
+        });
+
+        // Update cache
+        dispatch({
+            type: 'UPDATE_MESSAGE_CACHE', payload: {
+                groupId: selectedGroup?._id,
+                cache: prev => ({
+                    ...prev,
+                    messages: prev.messages?.map(msg =>
+                        msg._id === messageId ? { ...msg, reactions } : msg
+                    ) || []
+                })
+            }
+        });
+
+        console.log(`🎭 Reaction ${action}: ${emoji} on message ${messageId}`);
+    }, [selectedGroup?._id]);
+
+    // Handle bulk message delivery
+    const handleBulkMessagesDelivered = useCallback(({ messageIds, userId, timestamp }) => {
+        dispatch({
+            type: 'SET_MESSAGES', payload: prev =>
+                prev.map(msg => {
+                    if (messageIds.includes(msg._id)) {
+                        const alreadyDelivered = msg.deliveredTo?.some(d => d.user === userId);
+                        if (!alreadyDelivered) {
+                            return {
+                                ...msg,
+                                deliveredTo: [...(msg.deliveredTo || []), { user: userId, deliveredAt: timestamp }]
+                            };
+                        }
+                    }
+                    return msg;
+                })
+        });
+    }, []);
+
+    // Handle bulk message seen
+    const handleBulkMessagesSeen = useCallback(({ messageIds, userId, timestamp }) => {
+        dispatch({
+            type: 'SET_MESSAGES', payload: prev =>
+                prev.map(msg => {
+                    if (messageIds.includes(msg._id)) {
+                        const alreadySeen = msg.seenBy?.some(s => s.user === userId);
+                        if (!alreadySeen) {
+                            return {
+                                ...msg,
+                                seenBy: [...(msg.seenBy || []), { user: userId, seenAt: timestamp }]
+                            };
+                        }
+                    }
+                    return msg;
+                })
+        });
+    }, []);
+
     const handleGroupUpdated = (data) => {
         const { group, action, user } = data
 
@@ -862,9 +1164,105 @@ const Dashboard = () => {
             setEditingMessage(null)
             toast.success('Message updated successfully')
         } catch (error) {
-            toast.error(error.response?.data?.error || 'Failed to edit message')
+            console.error('Edit message error:', error);
+            console.error('Error response:', error.response?.data);
+            const errorMessage = error.response?.data?.error || error.response?.data?.details || error.message || 'Failed to edit message';
+            toast.error(typeof errorMessage === 'string' ? errorMessage : JSON.stringify(errorMessage));
         }
     }
+
+    // Handle message reactions
+    const handleReactToMessage = (messageId, emoji) => {
+        if (selectedGroup) {
+            socketService.reactToMessage(messageId, emoji, selectedGroup._id);
+        }
+    }
+
+    // Handle reply to message
+    const handleReplyToMessage = (message) => {
+        setReplyingMessage(message);
+        console.log('Reply to message:', message);
+    }
+
+    // Handle message deletion via socket
+    const handleDeleteMessageSocket = (messageId, reason = 'user') => {
+        if (selectedGroup) {
+            socketService.deleteMessage(messageId, selectedGroup._id, reason);
+        }
+    }
+
+    // Handle message editing via socket
+    const handleEditMessageSocket = (messageId, content) => {
+        if (selectedGroup) {
+            socketService.editMessage(messageId, content, selectedGroup._id);
+        }
+    }
+
+    // Mark messages as delivered
+    const handleMarkAsDelivered = (messageIds) => {
+        if (selectedGroup) {
+            if (Array.isArray(messageIds)) {
+                socketService.markAsDelivered(null, selectedGroup._id, messageIds);
+            } else {
+                socketService.markAsDelivered(messageIds, selectedGroup._id);
+            }
+        }
+    }
+
+    // Mark messages as seen
+    const handleMarkAsSeen = (messageIds) => {
+        if (selectedGroup) {
+            if (Array.isArray(messageIds)) {
+                socketService.markAsSeen(null, selectedGroup._id, messageIds);
+            } else {
+                socketService.markAsSeen(messageIds, selectedGroup._id);
+            }
+        }
+    }
+
+    // Auto-mark messages as delivered when they appear in view
+    useEffect(() => {
+        if (messages.length > 0 && selectedGroup) {
+            const messageIds = messages
+                .filter(msg => 
+                    !msg.deleted?.isDeleted && 
+                    msg.senderId._id !== user._id &&
+                    !msg.deliveredTo?.some(d => d.user === user._id || d.user === user.id)
+                )
+                .map(msg => msg._id);
+            
+            if (messageIds.length > 0) {
+                // Debounce delivery marking to avoid spam
+                const timeoutId = setTimeout(() => {
+                    handleMarkAsDelivered(messageIds);
+                }, 2000); // Increased debounce time
+                
+                return () => clearTimeout(timeoutId);
+            }
+        }
+    }, [messages.length, selectedGroup?._id, user._id]); // Only depend on length and IDs, not the entire messages array
+
+    // Auto-mark messages as seen when user is actively viewing
+    useEffect(() => {
+        if (messages.length > 0 && selectedGroup && !document.hidden) {
+            const messageIds = messages
+                .filter(msg => 
+                    !msg.deleted?.isDeleted && 
+                    msg.senderId._id !== user._id &&
+                    !msg.seenBy?.some(s => s.user === user._id || s.user === user.id)
+                )
+                .map(msg => msg._id);
+            
+            if (messageIds.length > 0) {
+                // Debounce seen marking to avoid spam
+                const timeoutId = setTimeout(() => {
+                    handleMarkAsSeen(messageIds);
+                }, 3000); // Increased debounce time for seen
+                
+                return () => clearTimeout(timeoutId);
+            }
+        }
+    }, [messages.length, selectedGroup?._id, user._id, document.hidden]); // Only depend on length and IDs, not the entire messages array
 
     const handleDeleteMessage = async (messageId) => {
         if (window.confirm('Are you sure you want to delete this message?')) {
@@ -880,10 +1278,20 @@ const Dashboard = () => {
     const handleDeleteMultipleMessages = async (messageIds) => {
         if (window.confirm(`Are you sure you want to delete ${messageIds.length} messages?`)) {
             try {
-                await messageApi.deleteMultipleMessages(messageIds)
-                toast.success(`${messageIds.length} messages deleted successfully`)
+                const response = await messageApi.deleteMultipleMessages(messageIds)
+                toast.success(response.message || `${messageIds.length} messages deleted successfully`)
+                
+                // Update the messages state to reflect the deletions
+                dispatch({
+                    type: 'SET_MESSAGES', 
+                    payload: prev => prev.filter(msg => !messageIds.includes(msg._id))
+                })
             } catch (error) {
-                toast.error('Failed to delete messages')
+                console.error('Multi-delete error:', error);
+                const errorMessage = error.response?.data?.error?.message || 
+                                   error.response?.data?.message || 
+                                   'Failed to delete messages';
+                toast.error(errorMessage);
             }
         }
     }
@@ -907,6 +1315,16 @@ const Dashboard = () => {
     // Custom group selection handler that saves to localStorage and uses caching
     const handleGroupSelect = async (group) => {
         if (selectedGroup?._id === group._id) return // Don't switch if already selected
+        
+        // Clear previous privacy information
+        setMessagePrivacy(null)
+        
+        // Validate that the group is in the user's groups list
+        const userGroup = groups.find(g => g._id === group._id);
+        if (!userGroup) {
+            toast.error('You are not a member of this group');
+            return;
+        }
 
         // Save current messages to cache before switching
         if (selectedGroup && messages.length > 0) {
@@ -964,6 +1382,18 @@ const Dashboard = () => {
     const handleSendMessage = async (messageData, callback) => {
         console.log('📤 Sending message:', messageData);
 
+        // Validate message data before processing
+        const hasValidContent = messageData.content && messageData.content.trim().length > 0;
+        const hasFile = messageData.file && messageData.file.url;
+        
+        if (!hasValidContent && !hasFile) {
+            console.warn('Cannot send empty message');
+            if (callback) {
+                callback({ error: 'Message content is required' });
+            }
+            return;
+        }
+
         // Check if socket is connected before sending
         if (!socketService.isConnected()) {
             console.log('⚠️ Socket not connected, attempting reconnection...');
@@ -1010,18 +1440,38 @@ const Dashboard = () => {
             }
         } else {
             console.log('✅ Socket connected, sending message via socket');
+            
+            // Add message optimistically to UI for better UX
+            const optimisticMessage = {
+                _id: `temp_${Date.now()}_${Math.random()}`,
+                content: messageData.content,
+                senderId: { _id: user.id, username: user.username },
+                groupId: messageData.groupId,
+                createdAt: new Date(),
+                messageType: messageData.messageType || 'text',
+                file: messageData.file,
+                replyTo: messageData.replyTo,
+                isOptimistic: true
+            };
+            
+            // Add optimistic message to UI
+            dispatch({ type: 'SET_MESSAGES', payload: prev => [...prev, optimisticMessage] });
+            
             // Use socket for real-time messaging
             socketService.sendMessage(messageData, (response) => {
                 console.log('📨 Socket message response:', response);
                 if (response && response.error && (response.error.includes('Socket not connected') || response.error.includes('reconnection failed'))) {
                     console.log('❌ Socket failed during send, trying API fallback');
-                    // Socket failed during send, try HTTP API fallback
+                    // Remove optimistic message and try HTTP API fallback
+                    dispatch({ type: 'SET_MESSAGES', payload: prev => prev.filter(msg => msg._id !== optimisticMessage._id) });
                     sendMessageViaAPI(messageData).then(apiResponse => {
                         if (callback) {
                             callback(apiResponse);
                         }
                     });
                 } else {
+                    // Remove optimistic message as real message will be added via socket
+                    dispatch({ type: 'SET_MESSAGES', payload: prev => prev.filter(msg => msg._id !== optimisticMessage._id) });
                     if (callback) {
                         callback(response);
                     }
@@ -1033,6 +1483,15 @@ const Dashboard = () => {
     // Fallback method to send message via HTTP API when socket fails
     const sendMessageViaAPI = async (messageData) => {
         try {
+            // Validate message data before sending
+            const hasValidContent = messageData.content && messageData.content.trim().length > 0;
+            const hasFile = messageData.file && messageData.file.url;
+            
+            if (!hasValidContent && !hasFile) {
+                console.warn('Cannot send empty message via API');
+                return { error: 'Message content is required' };
+            }
+            
             const response = await messageApi.sendMessage(messageData);
             return { ok: true, data: response };
         } catch (error) {
@@ -1084,33 +1543,37 @@ const Dashboard = () => {
 
     if (loading) {
         return (
-            <div className="min-h-screen flex items-center justify-center">
-                <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary-600"></div>
+            <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/20 dark:from-slate-900 dark:via-slate-800 dark:to-slate-700">
+                <div className="text-center">
+                    <div className="animate-spin rounded-full h-16 w-16 sm:h-20 sm:w-20 md:h-24 md:w-24 border-4 border-slate-200 dark:border-slate-700 border-t-blue-500 mx-auto mb-4"></div>
+                    <p className="text-sm sm:text-base text-slate-600 dark:text-slate-400 font-medium">Loading Dashboard...</p>
+                </div>
             </div>
         )
     }
 
     return (
         <ErrorBoundary>
-            <div className="flex h-screen bg-gradient-to-br from-slate-50 to-blue-50 dark:from-slate-900 dark:to-slate-800 overflow-hidden relative -colors duration-300">
+            <div className="flex h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/20 dark:from-slate-900 dark:via-slate-800 dark:to-slate-700 overflow-hidden relative transition-colors duration-300">
                 {/* Mobile Sidebar Overlay */}
                 {isSidebarOpen && (
                     <div
-                        className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden -opacity duration-300"
+                        className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden transition-all duration-300"
                         onClick={handleOverlayClick}
                     />
                 )}
 
-                {/* Sidebar */}
+                {/* Enhanced Sidebar */}
                 <div className={`
                 fixed lg:static inset-y-0 left-0 z-50 lg:z-auto
-                transform -transform duration-300 ease-in-out
+                transform transition-all duration-300 ease-in-out
                 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
-                w-72 sm:w-80 lg:w-80
+                w-72 sm:w-80 lg:w-80 xl:w-96
+                shadow-xl lg:shadow-none
             `}>
                     <Suspense fallback={
-                        <div className="w-full bg-[#343a40] flex items-center justify-center h-full">
-                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#34a0a4]"></div>
+                        <div className="w-full bg-gradient-to-b from-slate-800 to-slate-900 flex items-center justify-center h-full">
+                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
                         </div>
                     }>
                         <Sidebar
@@ -1132,41 +1595,56 @@ const Dashboard = () => {
                 {/* Main Content Area */}
                 <div className="flex-1 flex flex-col min-h-0 lg:ml-0">
                     {/* Mobile Header */}
-                    <div className="lg:hidden bg-white dark:bg-slate-800 backdrop-blur-sm border-b border-slate-200 dark:border-slate-700 px-3 sm:px-4 py-3 flex items-center justify-between sticky top-0 z-30 shadow-sm">
+                    <div className="lg:hidden bg-white/95 dark:bg-slate-800/95 backdrop-blur-md border-b border-slate-200/50 dark:border-slate-700/50 px-3 sm:px-4 py-3 flex items-center justify-between sticky top-0 z-30 shadow-lg">
                         <button
                             onClick={toggleSidebar}
-                            className="p-2 rounded-xl bg-blue-50 dark:bg-blue-900/20 active:bg-blue-100 dark:active:bg-blue-900/30 -all duration-200 flex-shrink-0 touch-manipulation group"
+                            className="p-2.5 rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 active:from-blue-100 dark:active:from-blue-900/30 transition-all duration-200 flex-shrink-0 touch-manipulation group shadow-sm"
                             aria-label="Toggle sidebar"
                         >
                             {isSidebarOpen ? (
-                                <X className="h-6 w-6 text-slate-700 dark:text-slate-300 group-text-blue-600 dark:group-text-blue-400 -colors" />
+                                <X className="h-5 w-5 sm:h-6 sm:w-6 text-slate-700 dark:text-slate-300 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors" />
                             ) : (
-                                <Menu className="h-6 w-6 text-slate-700 dark:text-slate-300 group-text-blue-600 dark:group-text-blue-400 -colors" />
+                                <Menu className="h-5 w-5 sm:h-6 sm:w-6 text-slate-700 dark:text-slate-300 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors" />
                             )}
                         </button>
 
                         <div className="flex-1 text-center px-2 min-w-0">
-                            <h1 className="text-base sm:text-lg font-semibold text-slate-800 dark:text-slate-200 truncate">
+                            <h1 className="text-sm sm:text-base md:text-lg font-semibold text-slate-800 dark:text-slate-200 truncate">
                                 {selectedGroup ? selectedGroup.name : 'Ramavan Chat'}
                             </h1>
                             {selectedGroup && (
-                                <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                                    <span className="hidden xs:inline">{selectedGroup.region} • </span>
-                                    {selectedGroup.users?.length || 0} members
-                                </p>
+                                <div className="flex items-center justify-center space-x-1 text-xs text-slate-500 dark:text-slate-400">
+                                    <span className="hidden xs:inline truncate">{selectedGroup.region}</span>
+                                    <span className="hidden xs:inline">•</span>
+                                    <span className="flex items-center space-x-1">
+                                        <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></div>
+                                        <span>{selectedGroup.users?.length || 0} members</span>
+                                    </span>
+                                </div>
                             )}
                         </div>
 
-                        <div className="flex items-center space-x-1 flex-shrink-0">
+                        <div className="flex items-center space-x-1.5 flex-shrink-0">
+                            {/* Connection Status Indicator */}
+                            <div className="hidden sm:flex items-center space-x-1 px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-700">
+                                {socketStatus === 'connected' ? (
+                                    <Wifi className="h-3 w-3 text-emerald-500" />
+                                ) : socketStatus === 'connecting' ? (
+                                    <div className="w-3 h-3 border border-amber-500 border-t-transparent rounded-full animate-spin" />
+                                ) : (
+                                    <WifiOff className="h-3 w-3 text-red-500" />
+                                )}
+                            </div>
+
                             {/* Mobile Notification Button */}
                             <button
                                 onClick={handleNotificationPanelOpen}
-                                className="relative p-2 text-slate-500 text-blue-600 rounded-xl bg-blue-50 -all duration-200 group touch-manipulation"
+                                className="relative p-2.5 text-slate-500 hover:text-blue-600 rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100 dark:from-blue-900/20 dark:to-indigo-900/20 dark:hover:from-blue-900/30 dark:hover:to-indigo-900/30 transition-all duration-200 group touch-manipulation shadow-sm"
                                 aria-label="Notifications"
                             >
-                                <Bell className="h-5 w-5 group-scale-110 -transform" />
+                                <Bell className="h-4 w-4 sm:h-5 sm:w-5 group-hover:scale-110 transition-transform" />
                                 {notificationCount > 0 && (
-                                    <span className="absolute -top-1 -right-1 bg-gradient-to-r from-red-500 to-red-600 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center font-medium min-w-[20px] animate-pulse shadow-sm">
+                                    <span className="absolute -top-1 -right-1 bg-gradient-to-r from-red-500 to-pink-500 text-white text-[10px] sm:text-xs rounded-full h-4 w-4 sm:h-5 sm:w-5 flex items-center justify-center font-bold min-w-[16px] sm:min-w-[20px] animate-pulse shadow-lg">
                                         {notificationCount > 99 ? '99+' : notificationCount}
                                     </span>
                                 )}
@@ -1174,10 +1652,10 @@ const Dashboard = () => {
                         </div>
                     </div>
                     {selectedGroup ? (
-                        <div className="chat-window-smooth">
+                        <div className="flex-1 flex flex-col min-h-0">
                             <Suspense fallback={
-                                <div className="flex-1 flex items-center justify-center bg-[#212529]">
-                                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#34a0a4]"></div>
+                                <div className="flex-1 flex items-center justify-center bg-white dark:bg-slate-900">
+                                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
                                 </div>
                             }>
                                 <ChatWindow
@@ -1185,52 +1663,75 @@ const Dashboard = () => {
                                     messages={messages}
                                     currentUser={user}
                                     editingMessage={editingMessage}
+                                    replyingMessage={replyingMessage}
                                     onSendMessage={handleSendMessage}
                                     onEditMessage={handleEditMessage}
                                     onDeleteMessage={handleDeleteMessage}
                                     onDeleteMultipleMessages={handleDeleteMultipleMessages}
                                     onSetEditingMessage={setEditingMessage}
+                                    onSetReplyingMessage={setReplyingMessage}
                                     onLoadMore={loadMoreMessages}
                                     loading={loading}
                                     loadingMore={loadingMore}
                                     hasMoreMessages={hasMoreMessages}
                                     socketService={socketService}
+                                    availableGroups={groups}
+                                    onReactToMessage={handleReactToMessage}
+                                    onReplyToMessage={handleReplyToMessage}
+                                    messagePrivacy={messagePrivacy}
+                                    onDeleteMessageSocket={handleDeleteMessageSocket}
+                                    onEditMessageSocket={handleEditMessageSocket}
+                                    onMarkAsDelivered={handleMarkAsDelivered}
+                                    onMarkAsSeen={handleMarkAsSeen}
                                 />
                             </Suspense>
                         </div>
                     ) : (
-                        <div className="flex-1 flex items-center justify-center bg-gradient-to-br from-white to-blue-50/30 min-h-0 p-4">
-                            <div className="text-center max-w-md w-full">
-                                <div className="text-4xl sm:text-6xl mb-6">💬</div>
-                                <h2 className="text-xl sm:text-2xl font-semibold text-slate-800 mb-3">
+                        <div className="flex-1 flex items-center justify-center bg-gradient-to-br from-white via-blue-50/20 to-indigo-50/30 dark:from-slate-900 dark:via-slate-800 dark:to-slate-700 min-h-0 p-3 sm:p-4 md:p-6">
+                            <div className="text-center max-w-sm sm:max-w-md md:max-w-lg w-full">
+                                <div className="text-3xl sm:text-4xl md:text-6xl mb-4 sm:mb-6 animate-bounce">💬</div>
+                                <h2 className="text-lg sm:text-xl md:text-2xl font-semibold text-slate-800 dark:text-slate-200 mb-3 sm:mb-4">
                                     Welcome to Ramavan Dashboard
                                 </h2>
 
-                                {/* Socket Status Indicator */}
-                                <div className="mb-6 p-4 rounded-xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-sm">
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-xs sm:text-sm font-medium text-slate-700">Connection Status:</span>
+                                {/* Enhanced Socket Status Indicator */}
+                                <div className="mb-4 sm:mb-6 p-3 sm:p-4 rounded-xl border border-slate-200/50 dark:border-slate-700/50 bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm shadow-lg">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <span className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">Connection Status:</span>
                                         <div className="flex items-center space-x-2">
-                                            <div className={`w-3 h-3 rounded-full ${socketStatus === 'connected' ? 'bg-emerald-500 animate-pulse' :
-                                                    socketStatus === 'connecting' ? 'bg-amber-500 animate-pulse' :
-                                                        socketStatus === 'error' ? 'bg-red-500' :
-                                                            'bg-slate-400'
-                                                }`}></div>
-                                            <span className="text-xs sm:text-sm text-slate-600 capitalize font-medium">{socketStatus}</span>
+                                            {socketStatus === 'connected' ? (
+                                                <Wifi className="h-4 w-4 text-emerald-500" />
+                                            ) : socketStatus === 'connecting' ? (
+                                                <div className="w-4 h-4 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
+                                            ) : socketStatus === 'error' ? (
+                                                <AlertCircle className="h-4 w-4 text-red-500" />
+                                            ) : (
+                                                <WifiOff className="h-4 w-4 text-slate-400" />
+                                            )}
+                                            <span className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 capitalize font-medium">{socketStatus}</span>
                                         </div>
                                     </div>
                                     {socketStatus === 'connected' && (
-                                        <p className="text-xs text-emerald-600 mt-2 font-medium">Real-time messaging available</p>
+                                        <div className="text-xs sm:text-sm text-emerald-600 dark:text-emerald-400 font-medium flex items-center justify-center">
+                                            <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse mr-2"></div>
+                                            Real-time messaging available
+                                        </div>
                                     )}
                                     {socketStatus === 'disconnected' && (
-                                        <p className="text-xs text-slate-500 mt-2">Messages will be sent via API fallback</p>
+                                        <div className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 flex items-center justify-center">
+                                            <div className="w-2 h-2 bg-slate-400 rounded-full mr-2"></div>
+                                            Messages will be sent via API fallback
+                                        </div>
                                     )}
                                     {socketStatus === 'error' && (
-                                        <p className="text-xs text-red-600 mt-2 font-medium">Connection failed - using API fallback</p>
+                                        <div className="text-xs sm:text-sm text-red-600 dark:text-red-400 font-medium flex items-center justify-center">
+                                            <div className="w-2 h-2 bg-red-500 rounded-full mr-2"></div>
+                                            Connection failed - using API fallback
+                                        </div>
                                     )}
                                 </div>
 
-                                <p className="text-sm sm:text-base text-slate-600 dark:text-slate-400 mb-6 leading-relaxed">
+                                <p className="text-sm sm:text-base text-slate-600 dark:text-slate-400 mb-4 sm:mb-6 leading-relaxed px-2">
                                     {groups.length === 0
                                         ? "You are not a member of any groups yet. Contact an admin to join groups."
                                         : (
@@ -1242,30 +1743,30 @@ const Dashboard = () => {
                                     }
                                 </p>
 
-                                {/* Mobile instruction for groups */}
+                                {/* Enhanced Mobile instruction for groups */}
                                 {groups.length > 0 && (
-                                    <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4 sm:p-5 text-left shadow-sm">
-                                        <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-300 mb-3 flex items-center">
-                                            <div className="w-2 h-2 bg-blue-500 rounded-full mr-2"></div>
+                                    <div className="bg-gradient-to-r from-blue-50 via-indigo-50 to-purple-50 dark:from-blue-900/20 dark:via-indigo-900/20 dark:to-purple-900/20 border border-blue-200/50 dark:border-blue-800/50 rounded-xl p-3 sm:p-4 md:p-5 text-left shadow-lg backdrop-blur-sm">
+                                        <h3 className="text-sm sm:text-base font-semibold text-blue-900 dark:text-blue-300 mb-3 sm:mb-4 flex items-center">
+                                            <div className="w-2 h-2 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full mr-2 animate-pulse"></div>
                                             How to use groups:
                                         </h3>
-                                        <ul className="text-sm text-blue-800 dark:text-blue-200 space-y-2">
+                                        <ul className="text-xs sm:text-sm text-blue-800 dark:text-blue-200 space-y-2 sm:space-y-3">
                                             <li className="flex items-start">
-                                                <span className="text-blue-500 mr-2">•</span>
+                                                <span className="text-blue-500 mr-2 mt-0.5 flex-shrink-0">•</span>
                                                 <span className="lg:hidden">Tap the menu button to see groups</span>
                                                 <span className="hidden lg:inline">Click on any group from the sidebar to start chatting</span>
                                             </li>
                                             <li className="flex items-start">
-                                                <span className="text-blue-500 mr-2">•</span>
-                                                You can see all groups you are a member of
+                                                <span className="text-blue-500 mr-2 mt-0.5 flex-shrink-0">•</span>
+                                                <span>You can see all groups you are a member of</span>
                                             </li>
                                             <li className="flex items-start">
-                                                <span className="text-blue-500 mr-2">•</span>
-                                                Contact an admin to join additional groups
+                                                <span className="text-blue-500 mr-2 mt-0.5 flex-shrink-0">•</span>
+                                                <span>Contact an admin to join additional groups</span>
                                             </li>
                                             <li className="flex items-start">
-                                                <span className="text-blue-500 mr-2">•</span>
-                                                Managers have additional permissions in groups
+                                                <span className="text-blue-500 mr-2 mt-0.5 flex-shrink-0">•</span>
+                                                <span>Managers have additional permissions in groups</span>
                                             </li>
                                         </ul>
                                     </div>
@@ -1289,6 +1790,8 @@ const Dashboard = () => {
             </div>
         </ErrorBoundary>
     )
-}
+})
+
+Dashboard.displayName = 'Dashboard'
 
 export default Dashboard

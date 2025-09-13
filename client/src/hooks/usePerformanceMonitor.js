@@ -150,8 +150,9 @@ export const useMemoryMonitor = () => {
 export const useNetworkMonitor = () => {
     useEffect(() => {
         if (process.env.NODE_ENV === 'development' && 'connection' in navigator) {
+            const connection = navigator.connection;
+            
             const logNetworkInfo = () => {
-                const connection = navigator.connection;
                 console.log('🌐 Network Info:', {
                     effectiveType: connection.effectiveType,
                     downlink: `${connection.downlink} Mbps`,

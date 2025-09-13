@@ -5,7 +5,7 @@ export const useTypingIndicator = (group, socketService) => {
     const typingTimeoutRef = useRef(null);
 
     const startTyping = () => {
-        if (!isTyping) {
+        if (!isTyping && group?._id && socketService) {
             setIsTyping(true);
             console.log('Starting typing for group:', group._id);
             socketService.startTyping(group._id);
@@ -18,13 +18,15 @@ export const useTypingIndicator = (group, socketService) => {
         
         typingTimeoutRef.current = setTimeout(() => {
             setIsTyping(false);
-            console.log('Stopping typing (timeout) for group:', group._id);
-            socketService.stopTyping(group._id);
+            if (group?._id && socketService) {
+                console.log('Stopping typing (timeout) for group:', group._id);
+                socketService.stopTyping(group._id);
+            }
         }, 2000);
     };
 
     const stopTyping = () => {
-        if (isTyping) {
+        if (isTyping && group?._id && socketService) {
             setIsTyping(false);
             console.log('Stopping typing (manual) for group:', group._id);
             socketService.stopTyping(group._id);
@@ -35,7 +37,25 @@ export const useTypingIndicator = (group, socketService) => {
     };
 
     const handleInputChange = (value) => {
-        if (value.trim()) {
+        // Handle both string values and event objects
+        let textValue = '';
+        
+        if (typeof value === 'string') {
+            textValue = value;
+        } else if (value && typeof value === 'object') {
+            // Handle event objects
+            if (value.target && value.target.value !== undefined) {
+                textValue = value.target.value;
+            } else if (value.value !== undefined) {
+                textValue = value.value;
+            }
+        } else if (value !== null && value !== undefined) {
+            // Convert other types to string
+            textValue = String(value);
+        }
+        
+        // Now safely check if the text has content
+        if (textValue && textValue.trim()) {
             startTyping();
         } else {
             stopTyping();

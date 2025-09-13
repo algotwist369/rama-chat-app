@@ -54,5 +54,15 @@ export const groupApi = {
   removeUserFromGroup: async (groupId, userId) => {
     const response = await axiosInstance.delete(`/groups/${groupId}/users/${userId}`);
     return response.data;
+  },
+
+  updateGroup: async (groupId, groupData) => {
+    const response = await axiosInstance.put(`/groups/${groupId}`, groupData);
+    return response.data;
+  },
+
+  deleteGroup: async (groupId) => {
+    const response = await axiosInstance.delete(`/groups/${groupId}`);
+    return response.data;
   }
 };

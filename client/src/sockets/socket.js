@@ -44,20 +44,31 @@ class SocketService {
     
     this.socket = io(SOCKET_URL, {
       auth: { token },
-      transports: ['websocket', 'polling'], // Enable WebSocket with polling fallback
+      transports: ['polling', 'websocket'], // Start with polling, then upgrade to websocket
       timeout: envConfig.get('SOCKET_TIMEOUT', 20000),
       forceNew: true, // Force new connection
       reconnection: true, // Enable reconnection for production
-      reconnectionAttempts: envConfig.get('SOCKET_RECONNECTION_ATTEMPTS', 5),
-      reconnectionDelay: envConfig.get('SOCKET_RECONNECTION_DELAY', 2000),
-      reconnectionDelayMax: envConfig.get('SOCKET_RECONNECTION_DELAY_MAX', 10000),
-      maxReconnectionAttempts: envConfig.get('SOCKET_RECONNECTION_ATTEMPTS', 5),
-      autoConnect: true
+      reconnectionAttempts: envConfig.get('SOCKET_RECONNECTION_ATTEMPTS', 10), // Increased attempts
+      reconnectionDelay: envConfig.get('SOCKET_RECONNECTION_DELAY', 1000), // Faster initial delay
+      reconnectionDelayMax: envConfig.get('SOCKET_RECONNECTION_DELAY_MAX', 5000), // Reduced max delay
+      maxReconnectionAttempts: envConfig.get('SOCKET_RECONNECTION_ATTEMPTS', 10),
+      autoConnect: true,
+      upgrade: true, // Allow transport upgrades
+      rememberUpgrade: false, // Don't remember upgrade to allow fallback to polling
+      randomizationFactor: 0.5, // Add randomization to prevent thundering herd
+      pingTimeout: 60000, // Increase ping timeout
+      pingInterval: 25000 // Increase ping interval
     });
 
     this.socket.on('connect', () => {
       console.log('Connected to server with ID:', this.socket.id);
       console.log('Socket transport:', this.socket.io.engine.transport.name);
+      
+      // Rejoin all previously joined groups
+      console.log('Rejoining groups after reconnection:', Array.from(this.joinedGroups));
+      this.joinedGroups.forEach(groupId => {
+        this.emit('group:join', { groupId });
+      });
     });
 
     this.socket.on('disconnect', (reason) => {
@@ -74,12 +85,25 @@ class SocketService {
       console.log('Socket event received: connect_error', error);
       
       // Handle authentication errors specifically
-      if (error.message === 'unauth') {
+      if (error.message === 'unauth' || error.message === 'Authentication error') {
         console.error('Socket authentication failed - token may be invalid or expired');
         // Clear invalid token and redirect to login
         localStorage.removeItem('token');
         localStorage.removeItem('user');
         window.location.href = '/login';
+      } else if (error.message === 'Transport unknown' || error.message.includes('websocket error')) {
+        console.log('Transport error, will retry with different transport');
+        // Force fallback to polling if websocket fails
+        if (this.socket.io.engine.transport.name === 'websocket') {
+          console.log('WebSocket failed, forcing fallback to polling');
+          this.socket.io.engine.upgrade = false;
+        }
+      } else if (error.message === 'Connection refused' || error.message.includes('ERR_CONNECTION_REFUSED')) {
+        console.error('Backend server is not running. Please start the backend server.');
+        // Don't retry aggressively if server is down
+        this.socket.io.reconnection = false;
+      } else {
+        console.log('Connection error, will retry automatically');
       }
     });
 
@@ -282,9 +306,35 @@ class SocketService {
     this.emit('typing:stop', { groupId });
   }
 
+  // Message interaction methods
+  reactToMessage(messageId, emoji, groupId) {
+    this.emit('message:react', { messageId, emoji, groupId });
+  }
+
+  editMessage(messageId, content, groupId) {
+    this.emit('message:edit', { messageId, content, groupId });
+  }
+
+  deleteMessage(messageId, groupId, reason = 'user') {
+    this.emit('message:delete', { messageId, groupId, reason });
+  }
+
+  markAsDelivered(messageId, groupId, messageIds = null) {
+    this.emit('message:delivered', { messageId, groupId, messageIds });
+  }
+
+  markAsSeen(messageId, groupId, messageIds = null) {
+    this.emit('message:seen', { messageId, groupId, messageIds });
+  }
+
   joinGroup(groupId) {
     if (this.joinedGroups.has(groupId)) {
       console.log('Already joined group:', groupId);
+      return;
+    }
+    
+    if (!this.socket || !this.socket.connected) {
+      console.warn('Socket not connected, cannot join group:', groupId);
       return;
     }
     
@@ -379,6 +429,25 @@ class SocketService {
     console.log('Manually reconnecting socket with fresh token...');
     this.disconnect();
     return this.connect(token);
+  }
+
+  // Typing indicator methods
+  startTyping(groupId) {
+    if (this.socket && this.socket.connected) {
+      console.log('Socket: Emitting typing:start for group:', groupId);
+      this.emit('typing:start', { groupId });
+    } else {
+      console.warn('Socket not connected, cannot start typing indicator');
+    }
+  }
+
+  stopTyping(groupId) {
+    if (this.socket && this.socket.connected) {
+      console.log('Socket: Emitting typing:stop for group:', groupId);
+      this.emit('typing:stop', { groupId });
+    } else {
+      console.warn('Socket not connected, cannot stop typing indicator');
+    }
   }
 
   // Check if token exists and is not expired (basic check)

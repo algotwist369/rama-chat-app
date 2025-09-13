@@ -10,6 +10,44 @@ const { createIndexes } = require('./config/databaseIndexes');
 
 const server = http.createServer(app);
 
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('💥 Unhandled Rejection at:', promise, 'reason:', reason);
+    
+    // Log the error with context
+    const errorContext = {
+        type: 'unhandledRejection',
+        promise: promise,
+        reason: reason,
+        timestamp: new Date().toISOString()
+    };
+    
+    console.error('❌ System Error:', {
+        name: reason?.name || 'Unknown',
+        message: reason?.message || 'Unhandled promise rejection',
+        stack: reason?.stack || 'No stack trace available',
+        timestamp: errorContext.timestamp,
+        context: errorContext
+    });
+    
+    // Don't exit the process, just log the error
+    // process.exit(1); // Uncomment if you want to exit on unhandled rejections
+});
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (error) => {
+    console.error('💥 Uncaught Exception:', error);
+    console.error('❌ System Error:', {
+        name: error.name,
+        message: error.message,
+        stack: error.stack,
+        timestamp: new Date().toISOString()
+    });
+    
+    // Exit the process for uncaught exceptions as they can leave the app in an undefined state
+    process.exit(1);
+});
+
 (async () => {
     try {
         console.log('🚀 Starting RAMA Chat Backend Server...');
@@ -17,11 +55,8 @@ const server = http.createServer(app);
         // Print environment information
         envConfig.printEnvironmentInfo();
         
-        // Connect to database
+        // Connect to database (indexes are created inside connectDB)
         await connectDB();
-        
-        // Create database indexes for optimal performance
-        await createIndexes();
 
         // Connect to Redis
         const redisClient = await connectRedis();

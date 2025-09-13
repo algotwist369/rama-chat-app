@@ -3,6 +3,14 @@ const Group = require('../models/Group');
 const User = require('../models/User');
 const extractTags = require('../utils/parser');
 const mongoose = require('mongoose');
+const { 
+    ValidationError, 
+    NotFoundError, 
+    AuthorizationError 
+} = require('../utils/errors');
+const { asyncHandler } = require('../middleware/errorHandler');
+const cacheManager = require('../utils/cacheManager');
+const { logger } = require('../utils/logger');
 
 // Memory-optimized message cleanup with chunking
 const cleanupDeletedMessages = async () => {
@@ -63,71 +71,114 @@ setInterval(cleanupOldMessages, 6 * 60 * 60 * 1000);
 /**
  * Send a new message
  */
-const sendMessage = async (req, res) => {
-    try {
-        const { text, groupId, file } = req.body;
-        const userId = req.user._id;
+const sendMessage = asyncHandler(async (req, res) => {
+    const { content, groupId, file, messageType = 'text', replyTo } = req.body;
+    const userId = req.user._id;
 
-        // Validate required fields
-        if (!text && !file) {
-            return res.status(400).json({ error: 'Message text or file is required' });
-        }
-
-        if (!groupId) {
-            return res.status(400).json({ error: 'Group ID is required' });
-        }
-
-        // Verify user is member of the group
-        const group = await Group.findById(groupId);
-        if (!group) {
-            return res.status(404).json({ error: 'Group not found' });
-        }
-
-        const isMember = group.users.some(user => user.toString() === userId.toString()) ||
-                        group.managers.some(manager => manager.toString() === userId.toString());
-
-        if (!isMember) {
-            return res.status(403).json({ error: 'You are not a member of this group' });
-        }
-
-        // Create the message
-        const message = await Message.create({
-            senderId: userId,
-            groupId: groupId,
-            text: text || '',
-            file: file || null,
-            tags: extractTags(text || '')
-        });
-
-        // Populate the message with sender and group information
-        const populatedMessage = await Message.findById(message._id)
-            .populate('senderId', 'username email')
-            .populate('groupId', 'name region')
-            .lean();
-
-        // Emit to the group via socket
-        const io = req.app.get('io');
-        if (io) {
-            io.to(`group:${groupId}`).emit('message:new', populatedMessage);
-        }
-
-        res.status(201).json({
-            message: 'Message sent successfully',
-            data: populatedMessage
-        });
-    } catch (error) {
-        console.error('Send message error:', error);
-        res.status(500).json({ error: error.message });
+    // Validate ObjectId format
+    if (!mongoose.Types.ObjectId.isValid(groupId)) {
+        throw new ValidationError('Invalid group ID format');
     }
-};
+
+    // Validate replyTo if provided
+    if (replyTo && !mongoose.Types.ObjectId.isValid(replyTo)) {
+        throw new ValidationError('Invalid reply message ID format');
+    }
+
+    // Validate required fields - check for meaningful content
+    const hasValidContent = content && content.trim().length > 0;
+    const hasFile = file && file.url;
+    
+    // Debug logging
+    console.log('Message validation:', {
+        content: content,
+        contentLength: content ? content.length : 0,
+        contentTrimmed: content ? content.trim().length : 0,
+        hasValidContent,
+        hasFile,
+        file: file
+    });
+    
+    if (!hasValidContent && !hasFile) {
+        throw new ValidationError('Message content or file is required');
+    }
+
+    // Verify user is member of the group
+    const group = await Group.findById(groupId);
+    if (!group) {
+        throw new NotFoundError('Group');
+    }
+
+    const isMember = group.users.includes(userId) ||
+                    group.managers.includes(userId) ||
+                    group.createdBy.equals(userId);
+
+    if (!isMember) {
+        throw new AuthorizationError('You are not a member of this group');
+    }
+
+    // Create the message - only if we have valid content or file
+    if (!hasValidContent && !hasFile) {
+        throw new ValidationError('Message must have either valid content or a file');
+    }
+
+    const messageData = {
+        senderId: userId,
+        groupId: groupId,
+        messageType,
+        file: hasFile ? file : null,
+        replyTo: replyTo || null
+    };
+
+    // Only add content if it's valid
+    if (hasValidContent) {
+        messageData.content = content.trim();
+        messageData.tags = extractTags(content.trim());
+    }
+
+    // Debug logging before message creation
+    console.log('Creating message with data:', {
+        messageData,
+        hasValidContent,
+        hasFile
+    });
+
+    const message = await Message.create(messageData);
+
+    // Invalidate message cache for this group
+    await cacheManager.deleteMessages(groupId);
+
+    // Populate the message with sender and group information
+    const populatedMessage = await Message.findById(message._id)
+        .populate('senderId', 'username email profile.firstName profile.lastName')
+        .populate('groupId', 'name region')
+        .lean();
+
+    // Emit to the group via socket
+    const io = req.app.get('io');
+    if (io) {
+        io.to(`group:${groupId}`).emit('message:new', populatedMessage);
+    }
+
+    logger.business('Message sent', {
+        messageId: message._id,
+        senderId: userId,
+        groupId,
+        messageType
+    });
+
+    res.status(201).json({
+        message: 'Message sent successfully',
+        data: populatedMessage
+    });
+});
 
 /**
  * Get messages from a group with optimized chunking and memory management
  */
-const getMessages = async (req, res) => {
-    try {
-        const { groupId } = req.params;
-        const { 
+const getMessages = asyncHandler(async (req, res) => {
+    const { groupId } = req.params;
+    const { 
             chunkSize = 50,           // Smaller chunks for better memory management
             before,                   // Cursor-based pagination
             after,                    // For loading newer messages
@@ -137,23 +188,32 @@ const getMessages = async (req, res) => {
         const userId = req.user._id;
         const chunkLimit = Math.min(parseInt(chunkSize), 100); // Cap at 100 for performance
 
-        // Fast group membership check with projection
-        const group = await Group.findById(groupId, { 
-            users: 1, 
-            managers: 1, 
-            _id: 1 
-        }).lean();
-        
-        if (!group) {
-            return res.status(404).json({ error: 'Group not found' });
-        }
+    // Validate ObjectId format
+    if (!mongoose.Types.ObjectId.isValid(groupId)) {
+        throw new ValidationError('Invalid group ID format');
+    }
 
-        const isMember = group.users.some(user => user.toString() === userId.toString()) ||
-                        group.managers.some(manager => manager.toString() === userId.toString());
-        
-        if (!isMember) {
-            return res.status(403).json({ error: 'Not authorized to view messages' });
-        }
+    // Fast group membership check with projection
+    const group = await Group.findById(groupId, { 
+        users: 1, 
+        managers: 1, 
+        _id: 1 
+    }).lean();
+    
+    if (!group) {
+        throw new NotFoundError('Group');
+    }
+
+    // Check if user is admin (admins can view messages from any group)
+    const isAdmin = req.user.role === 'admin';
+    
+    // Proper ObjectId comparison for membership check
+    const isMember = group.users.some(id => id.toString() === userId.toString()) ||
+                    group.managers.some(id => id.toString() === userId.toString());
+    
+    if (!isAdmin && !isMember) {
+        throw new AuthorizationError('Not authorized to view messages');
+    }
 
         // Get user's join date with minimal projection
         const user = await User.findById(userId, { groupJoinedAt: 1 }).lean();
@@ -165,9 +225,10 @@ const getMessages = async (req, res) => {
             'deleted.isDeleted': { $ne: true }
         };
         
-        // Time-based filtering for performance - only apply if user has a specific join date
-        // For existing group members, show all messages unless they have a specific join date
-        if (userJoinedAt) {
+        // Message privacy feature: New users can only see messages sent after they joined the group
+        // Admins can see all messages regardless of join date
+        // Regular users only see messages created after their groupJoinedAt timestamp
+        if (!isAdmin && userJoinedAt) {
             baseQuery.createdAt = { $gte: userJoinedAt };
         }
         // Remove the 30-day restriction for existing members - they should see all group messages
@@ -185,7 +246,9 @@ const getMessages = async (req, res) => {
         console.log('🔍 Message Query Debug:', {
             groupId,
             userId,
+            isAdmin,
             userJoinedAt,
+            messagePrivacy: !isAdmin && userJoinedAt ? 'enabled' : 'disabled',
             baseQuery,
             chunkLimit
         });
@@ -237,6 +300,44 @@ const getMessages = async (req, res) => {
                 }
             },
             
+            // Lookup replyTo message
+            {
+                $lookup: {
+                    from: 'messages',
+                    localField: 'replyTo',
+                    foreignField: '_id',
+                    as: 'replyToMessage',
+                    pipeline: [
+                        { 
+                            $project: { 
+                                content: 1, 
+                                _id: 1,
+                                messageType: 1,
+                                file: 1,
+                                senderId: 1
+                            } 
+                        }
+                    ]
+                }
+            },
+            
+            // Lookup replyTo sender
+            {
+                $lookup: {
+                    from: 'users',
+                    let: { replyToSenderId: { $arrayElemAt: ['$replyToMessage.senderId', 0] } },
+                    pipeline: [
+                        {
+                            $match: {
+                                $expr: { $eq: ['$_id', '$$replyToSenderId'] }
+                            }
+                        },
+                        { $project: { username: 1, _id: 1, 'profile.firstName': 1, 'profile.lastName': 1, email: 1 } }
+                    ],
+                    as: 'replyToSender'
+                }
+            },
+            
             // Optimized field projection
             {
                 $addFields: {
@@ -247,7 +348,26 @@ const getMessages = async (req, res) => {
                             then: { $arrayElemAt: ['$deletedByUser', 0] },
                             else: null
                         }
+                    },
+                    replyToPopulated: {
+                        $cond: {
+                            if: { $gt: [{ $size: '$replyToMessage' }, 0] },
+                            then: {
+                                $mergeObjects: [
+                                    { $arrayElemAt: ['$replyToMessage', 0] },
+                                    { senderId: { $arrayElemAt: ['$replyToSender', 0] } }
+                                ]
+                            },
+                            else: null
+                        }
                     }
+                }
+            },
+            
+            // Replace original replyTo with populated version
+            {
+                $addFields: {
+                    replyTo: '$replyToPopulated'
                 }
             },
             
@@ -255,13 +375,15 @@ const getMessages = async (req, res) => {
             {
                 $project: {
                     _id: 1,
-                    text: 1,
+                    content: 1,
+                    messageType: 1,
                     file: 1,
                     senderId: 1,
                     groupId: 1,
                     createdAt: 1,
                     updatedAt: 1,
                     deleted: 1,
+                    replyTo: 1,
                     // Only include these fields if metadata is requested
                     ...(includeMetadata === 'true' && {
                         seenBy: 1,
@@ -277,13 +399,20 @@ const getMessages = async (req, res) => {
 
         // Execute aggregation with memory optimization
         let messages = await Message.aggregate(pipeline).allowDiskUse(false);
+        
+        // Debug: Log first message with replyTo to see the structure
+        const messageWithReply = messages.find(msg => msg.replyTo);
+        if (messageWithReply) {
+            console.log('🔍 Debug - Message with replyTo:', JSON.stringify(messageWithReply.replyTo, null, 2));
+            console.log('🔍 Debug - Full message structure:', JSON.stringify(messageWithReply, null, 2));
+        }
 
         // Debug logging for aggregation results
         console.log('📊 Aggregation Results:', {
             messagesFound: messages.length,
             firstMessage: messages[0] ? {
                 _id: messages[0]._id,
-                text: messages[0].text,
+                content: messages[0].content, // Use 'content' instead of 'text'
                 createdAt: messages[0].createdAt
             } : null
         });
@@ -344,6 +473,14 @@ const getMessages = async (req, res) => {
                 prevCursor,
                 total: totalCount,
                 isEstimated: totalCount === estimatedCount && estimatedCount >= 10000
+            },
+            privacy: {
+                messagePrivacyEnabled: !isAdmin && userJoinedAt ? true : false,
+                userJoinedAt: userJoinedAt,
+                isAdmin: isAdmin,
+                note: !isAdmin && userJoinedAt ? 
+                    'You can only see messages sent after you joined this group' : 
+                    'You can see all messages in this group'
             }
         };
 
@@ -357,86 +494,415 @@ const getMessages = async (req, res) => {
         }
 
         res.json(response);
-        
-    } catch (error) {
-        console.error('Error fetching messages:', error);
-        res.status(500).json({ error: error.message });
-    }
-};
+});
 
 /**
  * Edit a message (only by sender within 15 minutes)
  */
-const editMessage = async (req, res) => {
-    try {
-        const { messageId } = req.params;
-        const { text } = req.body;
-        const userId = req.user._id;
+const editMessage = asyncHandler(async (req, res) => {
+    const { messageId } = req.params;
+    const { content } = req.body; // Use 'content' instead of 'text'
+    const userId = req.user._id;
 
-        const message = await Message.findById(messageId);
-        if (!message) return res.status(404).json({ error: 'Message not found' });
+    // Debug logging
+    console.log('Edit message request:', {
+        messageId,
+        content,
+        contentType: typeof content,
+        contentLength: content ? content.length : 0,
+        body: req.body
+    });
 
-        if (!message.senderId.equals(userId)) {
-            return res.status(403).json({ error: 'Not authorized to edit this message' });
-        }
-
-        const editTimeLimit = 15 * 60 * 1000;
-        if (Date.now() - message.createdAt.getTime() > editTimeLimit) {
-            return res.status(400).json({ error: 'Message too old to edit' });
-        }
-
-        message.text = text;
-        message.tags = extractTags(text);
-        message.edited = { isEdited: true, editedAt: new Date() };
-
-        await message.save();
-
-        // If this is an original message, also update all forwarded copies
-        if (!message.forwardedFrom) {
-            await Message.updateMany(
-                { forwardedFrom: messageId },
-                { 
-                    text: text,
-                    tags: extractTags(text),
-                    edited: { isEdited: true, editedAt: new Date() }
-                }
-            );
-        }
-
-        // Populate the message with sender and group information before emitting
-        const populatedMessage = await Message.findById(message._id)
-            .populate('senderId', 'username email')
-            .populate('groupId', 'name region')
-            .lean();
-
-        req.app.get('io')?.to(`group:${message.groupId}`).emit('message:edited', populatedMessage);
-
-        res.json({ message: 'Message updated successfully', message });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
+    // Validate ObjectId format
+    if (!mongoose.Types.ObjectId.isValid(messageId)) {
+        throw new ValidationError('Invalid message ID format');
     }
-};
+
+    const message = await Message.findById(messageId);
+    if (!message) {
+        throw new NotFoundError('Message');
+    }
+
+    if (!message.senderId.equals(userId)) {
+        throw new AuthorizationError('Not authorized to edit this message');
+    }
+
+    const editTimeLimit = 15 * 60 * 1000;
+    if (Date.now() - message.createdAt.getTime() > editTimeLimit) {
+        throw new ValidationError('Message too old to edit');
+    }
+
+    message.content = content; // Use 'content' instead of 'text'
+    message.tags = extractTags(content);
+    message.edited = { isEdited: true, editedAt: new Date() };
+
+    await message.save();
+
+    // If this is an original message, also update all forwarded copies
+    if (!message.forwardedFrom) {
+        await Message.updateMany(
+            { forwardedFrom: messageId },
+            { 
+                content: content, // Use 'content' instead of 'text'
+                tags: extractTags(content),
+                edited: { isEdited: true, editedAt: new Date() }
+            }
+        );
+    }
+
+    // Invalidate message cache
+    await cacheManager.deleteMessages(message.groupId);
+
+    // Populate the message with sender and group information before emitting
+    const populatedMessage = await Message.findById(message._id)
+        .populate('senderId', 'username email')
+        .populate('groupId', 'name region')
+        .lean();
+
+    req.app.get('io')?.to(`group:${message.groupId}`).emit('message:edited', populatedMessage);
+
+    logger.business('Message edited', {
+        messageId: message._id,
+        senderId: userId,
+        groupId: message.groupId
+    });
+
+    res.json({ message: 'Message updated successfully', message });
+});
 
 /**
  * Soft delete a message (owner, manager, or admin)
  */
-const deleteMessage = async (req, res) => {
-    try {
-        const { messageId } = req.params;
-        const userId = req.user._id;
+const deleteMessage = asyncHandler(async (req, res) => {
+    const { messageId } = req.params;
+    const userId = req.user._id;
 
-        const message = await Message.findById(messageId);
-        if (!message) return res.status(404).json({ error: 'Message not found' });
+    // Validate ObjectId format
+    if (!mongoose.Types.ObjectId.isValid(messageId)) {
+        throw new ValidationError('Invalid message ID format');
+    }
 
-        const canDelete =
-            message.senderId.equals(userId) ||
-            req.user.role === 'admin' ||
-            req.user.role === 'manager';
+    const message = await Message.findById(messageId);
+    if (!message) {
+        throw new NotFoundError('Message');
+    }
 
-        if (!canDelete) {
-            return res.status(403).json({ error: 'Not authorized to delete this message' });
+    const canDelete =
+        message.senderId.equals(userId) ||
+        req.user.role === 'admin' ||
+        req.user.role === 'manager';
+
+    if (!canDelete) {
+        throw new AuthorizationError('Not authorized to delete this message');
+    }
+
+    message.deleted = {
+        isDeleted: true,
+        deletedBy: userId,
+        deletedAt: new Date()
+    };
+
+    await message.save();
+
+    // If this is an original message, also delete all forwarded copies
+    if (!message.forwardedFrom) {
+        await Message.updateMany(
+            { forwardedFrom: messageId },
+            { 
+                deleted: {
+                    isDeleted: true,
+                    deletedBy: userId,
+                    deletedAt: new Date()
+                }
+            }
+        );
+    }
+
+    // Invalidate message cache
+    await cacheManager.deleteMessages(message.groupId);
+
+    // Populate the deletedBy field with user information for the socket event
+    const populatedMessage = await Message.findById(messageId)
+        .populate('deleted.deletedBy', 'username')
+        .populate('senderId', 'username')
+        .lean();
+
+    logger.business('Message deleted', {
+        messageId,
+        deletedBy: userId,
+        groupId: message.groupId
+    });
+    
+    req.app.get('io')?.to(`group:${message.groupId}`).emit('message:deleted', {
+        messageId,
+        deletedBy: populatedMessage.deleted.deletedBy
+    });
+
+    res.json({ message: 'Message deleted successfully' });
+});
+
+/**
+ * Search messages (text, group, date range)
+ */
+const searchMessages = asyncHandler(async (req, res) => {
+    const { q, groupId, startDate, endDate, page = 1, limit = 20 } = req.query;
+    const skip = (page - 1) * limit;
+
+    // Validate ObjectId if groupId is provided
+    if (groupId && !mongoose.Types.ObjectId.isValid(groupId)) {
+        throw new ValidationError('Invalid group ID format');
+    }
+
+    let searchQuery = { 'deleted.isDeleted': { $ne: true } };
+    if (groupId) searchQuery.groupId = groupId;
+    if (q) searchQuery.content = { $regex: q, $options: 'i' }; // Use 'content' instead of 'text'
+    if (startDate || endDate) {
+        searchQuery.createdAt = {};
+        if (startDate) searchQuery.createdAt.$gte = new Date(startDate);
+        if (endDate) searchQuery.createdAt.$lte = new Date(endDate);
+    }
+
+    const messages = await Message.find(searchQuery)
+        .populate('senderId', 'username email')
+        .populate('groupId', 'name region')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(parseInt(limit));
+
+    const total = await Message.countDocuments(searchQuery);
+
+    logger.business('Messages searched', {
+        userId: req.user._id,
+        query: q,
+        groupId,
+        resultsCount: messages.length
+    });
+
+    res.json({
+        messages,
+        pagination: {
+            page: parseInt(page),
+            limit: parseInt(limit),
+            total,
+            pages: Math.ceil(total / limit)
         }
+    });
+});
 
+/**
+ * Forward message to other groups
+ */
+const forwardMessage = asyncHandler(async (req, res) => {
+    const { messageId } = req.params;
+    const { groupIds } = req.body;
+
+    // Validate ObjectId format
+    if (!mongoose.Types.ObjectId.isValid(messageId)) {
+        throw new ValidationError('Invalid message ID format');
+    }
+
+    // Validate groupIds array
+    if (!Array.isArray(groupIds) || groupIds.length === 0) {
+        throw new ValidationError('Group IDs array is required');
+    }
+
+    // Validate all group IDs
+    for (const groupId of groupIds) {
+        if (!mongoose.Types.ObjectId.isValid(groupId)) {
+            throw new ValidationError('Invalid group ID format in array');
+        }
+    }
+
+    const originalMessage = await Message.findById(messageId);
+    if (!originalMessage) {
+        throw new NotFoundError('Message');
+    }
+
+    const targetGroups = await Group.find({ _id: { $in: groupIds } });
+
+    const forwardedMessages = await Promise.all(
+        targetGroups.map(group =>
+            Message.create({
+                senderId: req.user._id,
+                groupId: group._id,
+                content: `[Forwarded] ${originalMessage.content}`, // Use 'content' field instead of 'text'
+                file: originalMessage.file,
+                tags: originalMessage.tags,
+                forwardedFrom: originalMessage._id
+            })
+        )
+    );
+
+    // Invalidate message cache for all target groups
+    await Promise.all(
+        targetGroups.map(group => cacheManager.deleteMessages(group._id))
+    );
+
+    const io = req.app.get('io');
+    if (io) {
+        forwardedMessages.forEach(msg => {
+            io.to(`group:${msg.groupId}`).emit('message:new', msg);
+        });
+    }
+
+    logger.business('Message forwarded', {
+        originalMessageId: messageId,
+        forwardedBy: req.user._id,
+        targetGroups: groupIds,
+        forwardedCount: forwardedMessages.length
+    });
+
+    res.json({
+        message: 'Message forwarded successfully',
+        forwardedTo: targetGroups.length
+    });
+});
+
+/**
+ * Mark messages as delivered for a user
+ */
+const markAsDelivered = asyncHandler(async (req, res) => {
+    const { messageIds } = req.body;
+    const userId = req.user._id;
+
+    // Validate messageIds array
+    if (!Array.isArray(messageIds) || messageIds.length === 0) {
+        throw new ValidationError('Message IDs array is required');
+    }
+
+    // Validate all message IDs
+    for (const messageId of messageIds) {
+        if (!mongoose.Types.ObjectId.isValid(messageId)) {
+            throw new ValidationError('Invalid message ID format in array');
+        }
+    }
+
+    await Message.updateMany(
+        { _id: { $in: messageIds }, deliveredTo: { $ne: userId } },
+        { $push: { deliveredTo: userId }, $set: { status: 'delivered' } }
+    );
+
+    logger.business('Messages marked as delivered', {
+        userId,
+        messageCount: messageIds.length
+    });
+
+    res.json({ message: 'Messages marked as delivered' });
+});
+
+/**
+ * Mark messages as seen for a user
+ */
+const markAsSeen = asyncHandler(async (req, res) => {
+    const { messageIds } = req.body;
+    const userId = req.user._id;
+
+    // Validate messageIds array
+    if (!Array.isArray(messageIds) || messageIds.length === 0) {
+        throw new ValidationError('Message IDs array is required');
+    }
+
+    // Validate all message IDs
+    for (const messageId of messageIds) {
+        if (!mongoose.Types.ObjectId.isValid(messageId)) {
+            throw new ValidationError('Invalid message ID format in array');
+        }
+    }
+
+    await Message.updateMany(
+        { _id: { $in: messageIds }, seenBy: { $ne: userId } },
+        { $push: { seenBy: userId }, $set: { status: 'seen' } }
+    );
+
+    logger.business('Messages marked as seen', {
+        userId,
+        messageCount: messageIds.length
+    });
+
+    res.json({ message: 'Messages marked as seen' });
+});
+
+/**
+ * Test endpoint to debug message retrieval
+ */
+const testGetMessages = asyncHandler(async (req, res) => {
+    const { groupId } = req.params;
+    const userId = req.user._id;
+
+    // Validate ObjectId format
+    if (!mongoose.Types.ObjectId.isValid(groupId)) {
+        throw new ValidationError('Invalid group ID format');
+    }
+
+    console.log('🧪 Test endpoint called:', { groupId, userId });
+
+    // Simple query to get all messages for the group
+    const messages = await Message.find({ 
+        groupId: groupId 
+    })
+    .populate('senderId', 'username _id')
+    .sort({ createdAt: 1 })
+    .lean();
+
+    console.log('🧪 Test results:', {
+        groupId,
+        messagesFound: messages.length,
+        messages: messages.map(m => ({
+            _id: m._id,
+            text: m.text,
+            senderId: m.senderId,
+            createdAt: m.createdAt
+        }))
+    });
+
+    res.json({
+        success: true,
+        groupId,
+        messagesFound: messages.length,
+        messages: messages
+    });
+});
+
+const deleteMultipleMessages = asyncHandler(async (req, res) => {
+    const { messageIds } = req.body;
+    const userId = req.user._id;
+
+    // Validate input
+    if (!Array.isArray(messageIds) || messageIds.length === 0) {
+        throw new ValidationError('messageIds must be a non-empty array');
+    }
+
+    // Validate all message IDs
+    for (const messageId of messageIds) {
+        if (!mongoose.Types.ObjectId.isValid(messageId)) {
+            throw new ValidationError(`Invalid message ID format: ${messageId}`);
+        }
+    }
+
+    // Find all messages and check permissions
+    const messages = await Message.find({ _id: { $in: messageIds } });
+    
+    if (messages.length === 0) {
+        throw new NotFoundError('No messages found');
+    }
+
+    // // Check if user can delete all messages
+    // const canDeleteAll = messages.every(message => 
+    //     message.senderId.equals(userId) ||
+    //     req.user.role === 'admin' ||
+    //     req.user.role === 'manager' ||
+    //     req.user.role === 'user'
+    // );
+
+    // if (!canDeleteAll) {
+    //     throw new AuthorizationError('Not authorized to delete one or more messages');
+    // }
+
+    // Delete all messages
+    const deletedMessages = [];
+    const groupIds = new Set();
+
+    for (const message of messages) {
         message.deleted = {
             isDeleted: true,
             deletedBy: userId,
@@ -444,11 +910,13 @@ const deleteMessage = async (req, res) => {
         };
 
         await message.save();
+        deletedMessages.push(message._id);
+        groupIds.add(message.groupId.toString());
 
         // If this is an original message, also delete all forwarded copies
         if (!message.forwardedFrom) {
             await Message.updateMany(
-                { forwardedFrom: messageId },
+                { forwardedFrom: message._id },
                 { 
                     deleted: {
                         isDeleted: true,
@@ -458,189 +926,27 @@ const deleteMessage = async (req, res) => {
                 }
             );
         }
-
-        // Populate the deletedBy field with user information for the socket event
-        const populatedMessage = await Message.findById(messageId)
-            .populate('deleted.deletedBy', 'username')
-            .populate('senderId', 'username')
-            .lean();
-
-        console.log('Emitting message:deleted event to group:', message.groupId, {
-            messageId,
-            deletedBy: populatedMessage.deleted.deletedBy
-        });
-        
-        req.app.get('io')?.to(`group:${message.groupId}`).emit('message:deleted', {
-            messageId,
-            deletedBy: populatedMessage.deleted.deletedBy
-        });
-
-        res.json({ message: 'Message deleted successfully' });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
     }
-};
 
-/**
- * Search messages (text, group, date range)
- */
-const searchMessages = async (req, res) => {
-    try {
-        const { q, groupId, startDate, endDate, page = 1, limit = 20 } = req.query;
-        const skip = (page - 1) * limit;
-
-        let searchQuery = { 'deleted.isDeleted': { $ne: true } };
-        if (groupId) searchQuery.groupId = groupId;
-        if (q) searchQuery.text = { $regex: q, $options: 'i' };
-        if (startDate || endDate) {
-            searchQuery.createdAt = {};
-            if (startDate) searchQuery.createdAt.$gte = new Date(startDate);
-            if (endDate) searchQuery.createdAt.$lte = new Date(endDate);
-        }
-
-        const messages = await Message.find(searchQuery)
-            .populate('senderId', 'username email')
-            .populate('groupId', 'name region')
-            .sort({ createdAt: -1 })
-            .skip(skip)
-            .limit(parseInt(limit));
-
-        const total = await Message.countDocuments(searchQuery);
-
-        res.json({
-            messages,
-            pagination: {
-                page: parseInt(page),
-                limit: parseInt(limit),
-                total,
-                pages: Math.ceil(total / limit)
-            }
-        });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
+    // Invalidate message cache for all affected groups
+    for (const groupId of groupIds) {
+        await cacheManager.deleteMessages(groupId);
     }
-};
 
-/**
- * Forward message to other groups
- */
-const forwardMessage = async (req, res) => {
-    try {
-        const { messageId } = req.params;
-        const { groupIds } = req.body;
+    logger.business('Multiple messages deleted', {
+        userId: req.user._id,
+        messageIds: deletedMessages,
+        count: deletedMessages.length,
+        groupIds: Array.from(groupIds)
+    });
 
-        const originalMessage = await Message.findById(messageId);
-        if (!originalMessage) return res.status(404).json({ error: 'Message not found' });
-
-        const targetGroups = await Group.find({ _id: { $in: groupIds } });
-
-        const forwardedMessages = await Promise.all(
-            targetGroups.map(group =>
-                Message.create({
-                    senderId: req.user._id,
-                    groupId: group._id,
-                    text: `[Forwarded] ${originalMessage.text}`,
-                    file: originalMessage.file,
-                    tags: originalMessage.tags,
-                    forwardedFrom: originalMessage._id
-                })
-            )
-        );
-
-        const io = req.app.get('io');
-        if (io) {
-            forwardedMessages.forEach(msg => {
-                io.to(`group:${msg.groupId}`).emit('message:new', msg);
-            });
-        }
-
-        res.json({
-            message: 'Message forwarded successfully',
-            forwardedTo: targetGroups.length
-        });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-};
-
-/**
- * Mark messages as delivered for a user
- */
-const markAsDelivered = async (req, res) => {
-    try {
-        const { messageIds } = req.body;
-        const userId = req.user._id;
-
-        await Message.updateMany(
-            { _id: { $in: messageIds }, deliveredTo: { $ne: userId } },
-            { $push: { deliveredTo: userId }, $set: { status: 'delivered' } }
-        );
-
-        res.json({ message: 'Messages marked as delivered' });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-};
-
-/**
- * Mark messages as seen for a user
- */
-const markAsSeen = async (req, res) => {
-    try {
-        const { messageIds } = req.body;
-        const userId = req.user._id;
-
-        await Message.updateMany(
-            { _id: { $in: messageIds }, seenBy: { $ne: userId } },
-            { $push: { seenBy: userId }, $set: { status: 'seen' } }
-        );
-
-        res.json({ message: 'Messages marked as seen' });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-};
-
-/**
- * Test endpoint to debug message retrieval
- */
-const testGetMessages = async (req, res) => {
-    try {
-        const { groupId } = req.params;
-        const userId = req.user._id;
-
-        console.log('🧪 Test endpoint called:', { groupId, userId });
-
-        // Simple query to get all messages for the group
-        const messages = await Message.find({ 
-            groupId: groupId 
-        })
-        .populate('senderId', 'username _id')
-        .sort({ createdAt: 1 })
-        .lean();
-
-        console.log('🧪 Test results:', {
-            groupId,
-            messagesFound: messages.length,
-            messages: messages.map(m => ({
-                _id: m._id,
-                text: m.text,
-                senderId: m.senderId,
-                createdAt: m.createdAt
-            }))
-        });
-
-        res.json({
-            success: true,
-            groupId,
-            messagesFound: messages.length,
-            messages: messages
-        });
-    } catch (error) {
-        console.error('Test endpoint error:', error);
-        res.status(500).json({ error: error.message });
-    }
-};
+    res.json({
+        success: true,
+        message: `${deletedMessages.length} messages deleted successfully`,
+        deletedCount: deletedMessages.length,
+        deletedMessageIds: deletedMessages
+    });
+});
 
 module.exports = {
     sendMessage,
@@ -648,6 +954,7 @@ module.exports = {
     testGetMessages,
     editMessage,
     deleteMessage,
+    deleteMultipleMessages,
     searchMessages,
     forwardMessage,
     markAsDelivered,

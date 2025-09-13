@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Volume2, VolumeX, Settings } from 'lucide-react';
+import { Volume2, VolumeX, Settings, X } from 'lucide-react';
 import soundManager from '../utils/soundManager';
+import Button from './common/Button';
 
 const SoundSettings = ({ isOpen, onClose }) => {
     const [isEnabled, setIsEnabled] = useState(soundManager.isSoundEnabled());
@@ -45,12 +46,13 @@ const SoundSettings = ({ isOpen, onClose }) => {
                         <Settings className="h-6 w-6 text-blue-600" />
                         <h2 className="text-xl font-semibold text-gray-800">Sound Settings</h2>
                     </div>
-                    <button
+                    <Button
                         onClick={onClose}
-                        className="text-gray-400 hover:text-gray-600 transition-colors"
-                    >
-                        ✕
-                    </button>
+                        variant="ghost"
+                        size="sm"
+                        icon={<X className="h-4 w-4" />}
+                        className="text-gray-400 hover:text-gray-600"
+                    />
                 </div>
 
                 <div className="space-y-6">
@@ -100,12 +102,13 @@ const SoundSettings = ({ isOpen, onClose }) => {
                     {/* Test Sound Button */}
                     {isEnabled && (
                         <div className="pt-4 border-t border-gray-200">
-                            <button
+                            <Button
                                 onClick={playTestSound}
-                                className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                                variant="primary"
+                                fullWidth
                             >
                                 Test Sound
-                            </button>
+                            </Button>
                         </div>
                     )}
 

@@ -33,11 +33,14 @@ export const AuthProvider = ({ children }) => {
             setToken(token);
             setUser(user);
             
-            toast.success('Login successful!');
             return { success: true };
         } catch (error) {
-            toast.error(error.response?.data?.error || 'Login failed');
-            return { success: false, error: error.response?.data?.error || 'Login failed' };
+            const errorData = error.response?.data;
+            const errorMessage = errorData?.error || 'Login failed';
+            
+            // Don't show toast - errors will be displayed in form fields
+            // Re-throw the error so useAuth can handle it properly
+            throw error;
         }
     };
 
@@ -52,11 +55,14 @@ export const AuthProvider = ({ children }) => {
             setToken(token);
             setUser(user);
             
-            toast.success('Registration successful!');
             return { success: true };
         } catch (error) {
-            toast.error(error.response?.data?.error || 'Registration failed');
-            return { success: false, error: error.response?.data?.error || 'Registration failed' };
+            const errorData = error.response?.data;
+            const errorMessage = errorData?.error || 'Registration failed';
+            
+            // Don't show toast - errors will be displayed in form fields
+            // Re-throw the error so useAuth can handle it properly
+            throw error;
         }
     };
 

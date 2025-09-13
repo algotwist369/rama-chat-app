@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Users } from 'lucide-react';
+import { Users, Eye, EyeOff } from 'lucide-react';
 
 const ChatHeader = React.memo(({
     group,
@@ -8,7 +8,8 @@ const ChatHeader = React.memo(({
     isRefreshingStatus,
     filteredTypingUsers,
     onRefreshMembers,
-    currentUser
+    currentUser,
+    messagePrivacy = null
 }) => {
     const [showMembersList, setShowMembersList] = useState(false);
 
@@ -22,7 +23,15 @@ const ChatHeader = React.memo(({
                             {group.name.charAt(0).toUpperCase()}
                         </div>
                         <div className="min-w-0 flex-1">
-                            <h2 className="text-[#e9ecef] sm:text-lg font-semibold text-white truncate">{group.name}</h2>
+                            <div className="flex items-center space-x-2">
+                                <h2 className="text-[#e9ecef] sm:text-lg font-semibold text-white truncate">{group.name}</h2>
+                                {messagePrivacy?.messagePrivacyEnabled && (
+                                    <div className="flex items-center space-x-1 text-xs text-blue-400" title={messagePrivacy.note}>
+                                        <EyeOff className="h-3 w-3" />
+                                        <span className="hidden sm:inline">Limited</span>
+                                    </div>
+                                )}
+                            </div>
                             <div className="text-xs sm:text-sm text-[#6c757d] flex items-center flex-wrap gap-1">
                                 <span className="hidden xs:inline">{group.region} • </span>
                                 <span>{group.users?.length || 0} members</span>

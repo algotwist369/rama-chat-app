@@ -1,7 +1,7 @@
 {
-  "name": "frontned",
+  "name": "ramavan-chat-frontend",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,11 +10,19 @@
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "build:prod": "vite build --mode production",
-    "lint": "eslint .",
+    "build:analyze": "vite build --mode production && npx vite-bundle-analyzer dist",
+    "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
+    "lint:fix": "eslint . --ext .js,.jsx,.ts,.tsx --fix",
     "preview": "vite preview",
+    "preview:prod": "vite preview --mode production",
     "env:test": "node src/scripts/test-environment.js",
     "env:local": "MODE=development node src/scripts/test-environment.js",
-    "env:prod": "MODE=production node src/scripts/test-environment.js"
+    "env:prod": "MODE=production node src/scripts/test-environment.js",
+    "type-check": "tsc --noEmit",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "clean": "rm -rf dist node_modules/.vite",
+    "test": "echo \"No tests specified\" && exit 0"
   },
   "dependencies": {
     "axios": "^1.11.0",

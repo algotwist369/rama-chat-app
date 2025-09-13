@@ -28,6 +28,8 @@ axiosInstance.interceptors.request.use(
 axiosInstance.interceptors.response.use(
   (response) => response,
   (error) => {
+    const errorData = error.response?.data;
+    
     if (error.response?.status === 401) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
@@ -35,8 +37,13 @@ axiosInstance.interceptors.response.use(
       toast.error('Session expired. Please login again.');
     } else if (error.response?.status >= 500) {
       toast.error('Server error. Please try again later.');
-    } else if (error.response?.data?.error) {
-      toast.error(error.response.data.error);
+    } else if (errorData?.error) {
+      // Handle new backend error format
+      if (typeof errorData.error === 'object') {
+        toast.error(errorData.error.message || 'An error occurred');
+      } else {
+        toast.error(errorData.error);
+      }
     } else if (error.message) {
       toast.error(error.message);
     }

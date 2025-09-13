@@ -154,7 +154,7 @@ export const useSocketListeners = (group, socketService) => {
             }
         };
 
-        const interval = setInterval(refreshOnlineStatus, 30000); // 30 seconds
+        const interval = setInterval(refreshOnlineStatus, 120000); // 2 minutes
 
         return () => clearInterval(interval);
     }, [group?._id]);

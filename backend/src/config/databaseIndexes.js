@@ -1,83 +1,195 @@
 const mongoose = require('mongoose');
 
 /**
- * Create database indexes for optimal performance with large datasets
+ * Database Indexes Configuration
+ * This file ensures all necessary indexes are created for optimal performance
  */
+
 const createIndexes = async () => {
     try {
-        console.log('🔍 Creating database indexes for optimal performance...');
+        console.log('🔍 Creating database indexes...');
+        
+        // User model indexes
+        const User = mongoose.model('User');
+        await User.collection.createIndex({ email: 1, isActive: 1 });
+        await User.collection.createIndex({ groupId: 1, isOnline: 1 });
+        await User.collection.createIndex({ role: 1, isActive: 1 });
+        await User.collection.createIndex({ lastSeen: -1 });
+        await User.collection.createIndex({ createdAt: -1 });
+        await User.collection.createIndex({ isOnline: 1 });
+        await User.collection.createIndex({ isActive: 1 });
+        await User.collection.createIndex({ emailVerified: 1 });
+        console.log('✅ User indexes created');
 
-        // Message indexes - optimized for chunking and memory efficiency
-        await mongoose.connection.db.collection('messages').createIndexes([
-            // Primary index for chunking queries
-            { key: { groupId: 1, 'deleted.isDeleted': 1, createdAt: -1 }, name: 'groupId_deleted_createdAt_idx' },
-            // Sparse index for non-deleted messages only
-            { key: { groupId: 1, createdAt: -1 }, name: 'groupId_createdAt_active_idx', partialFilterExpression: { 'deleted.isDeleted': { $ne: true } } },
-            // Sender-based queries
-            { key: { senderId: 1, createdAt: -1 }, name: 'senderId_createdAt_idx' },
-            // Cleanup operations
-            { key: { 'deleted.isDeleted': 1, 'deleted.deletedAt': 1 }, name: 'deleted_cleanup_idx' },
-            { key: { createdAt: 1 }, name: 'createdAt_cleanup_idx' },
-            // File and media queries
-            { key: { file: 1, createdAt: -1 }, name: 'file_createdAt_idx' },
-            // Forwarding and tags
-            { key: { forwardedFrom: 1 }, name: 'forwardedFrom_idx' },
-            { key: { tags: 1 }, name: 'tags_idx' },
-            // Compound index for user join date filtering
-            { key: { groupId: 1, createdAt: 1 }, name: 'groupId_createdAt_asc_idx' }
-        ]);
+        // Group model indexes
+        const Group = mongoose.model('Group');
+        await Group.collection.createIndex({ region: 1, isActive: 1 });
+        await Group.collection.createIndex({ createdBy: 1, isActive: 1 });
+        await Group.collection.createIndex({ 'stats.lastActivity': -1 });
+        await Group.collection.createIndex({ name: 'text', description: 'text' });
+        await Group.collection.createIndex({ name: 1 });
+        await Group.collection.createIndex({ isPublic: 1 });
+        await Group.collection.createIndex({ isActive: 1 });
+        console.log('✅ Group indexes created');
 
-        // Group indexes
-        await mongoose.connection.db.collection('groups').createIndexes([
-            { key: { users: 1, createdAt: -1 }, name: 'users_createdAt_idx' },
-            { key: { managers: 1, createdAt: -1 }, name: 'managers_createdAt_idx' },
-            { key: { region: 1 }, name: 'region_idx' },
-            { key: { name: 'text' }, name: 'name_text_idx' },
-            { key: { createdBy: 1 }, name: 'createdBy_idx' }
-        ]);
+        // Message model indexes
+        const Message = mongoose.model('Message');
+        await Message.collection.createIndex({ groupId: 1, createdAt: -1 });
+        await Message.collection.createIndex({ senderId: 1, createdAt: -1 });
+        await Message.collection.createIndex({ groupId: 1, messageType: 1, createdAt: -1 });
+        await Message.collection.createIndex({ 'deleted.isDeleted': 1, groupId: 1, createdAt: -1 });
+        await Message.collection.createIndex({ tags: 1 });
+        await Message.collection.createIndex({ mentions: 1 });
+        await Message.collection.createIndex({ replyTo: 1 });
+        await Message.collection.createIndex({ content: 'text' });
+        await Message.collection.createIndex({ messageType: 1 });
+        await Message.collection.createIndex({ status: 1 });
+        await Message.collection.createIndex({ priority: 1 });
+        console.log('✅ Message indexes created');
 
-        // User indexes
-        await mongoose.connection.db.collection('users').createIndexes([
-            { key: { email: 1 }, name: 'email_idx', unique: true },
-            { key: { username: 1 }, name: 'username_idx' },
-            { key: { groupId: 1 }, name: 'groupId_idx' },
-            { key: { isOnline: 1, lastSeen: -1 }, name: 'isOnline_lastSeen_idx' },
-            { key: { role: 1 }, name: 'role_idx' }
-        ]);
+        // Compound indexes for complex queries
+        await Message.collection.createIndex({ 
+            groupId: 1, 
+            'deleted.isDeleted': 1, 
+            createdAt: -1 
+        });
+        
+        await Message.collection.createIndex({ 
+            groupId: 1, 
+            messageType: 1, 
+            'deleted.isDeleted': 1, 
+            createdAt: -1 
+        });
 
-        // Notification indexes
-        await mongoose.connection.db.collection('notifications').createIndexes([
-            { key: { userId: 1, createdAt: -1 }, name: 'userId_createdAt_idx' },
-            { key: { userId: 1, isRead: 1, createdAt: -1 }, name: 'userId_isRead_createdAt_idx' },
-            { key: { groupId: 1, createdAt: -1 }, name: 'groupId_createdAt_idx' },
-            { key: { type: 1, createdAt: -1 }, name: 'type_createdAt_idx' }
-        ]);
+        await User.collection.createIndex({ 
+            groupId: 1, 
+            role: 1, 
+            isActive: 1 
+        });
 
-        console.log('✅ Database indexes created successfully');
+        await Group.collection.createIndex({ 
+            region: 1, 
+            'settings.isPublic': 1, 
+            isActive: 1 
+        });
+
+        console.log('✅ Compound indexes created');
+        console.log('🎉 All database indexes created successfully!');
+        
     } catch (error) {
         console.error('❌ Error creating database indexes:', error);
+        throw error;
     }
 };
 
 /**
- * Drop all indexes (use with caution)
+ * Drop all indexes (use with caution - only for development)
  */
-const dropIndexes = async () => {
+const dropAllIndexes = async () => {
     try {
-        console.log('🗑️ Dropping all database indexes...');
+        console.log('⚠️  Dropping all indexes...');
         
-        await mongoose.connection.db.collection('messages').dropIndexes();
-        await mongoose.connection.db.collection('groups').dropIndexes();
-        await mongoose.connection.db.collection('users').dropIndexes();
-        await mongoose.connection.db.collection('notifications').dropIndexes();
+        const User = mongoose.model('User');
+        const Group = mongoose.model('Group');
+        const Message = mongoose.model('Message');
         
-        console.log('✅ All indexes dropped successfully');
+        await User.collection.dropIndexes();
+        await Group.collection.dropIndexes();
+        await Message.collection.dropIndexes();
+        
+        console.log('✅ All indexes dropped');
     } catch (error) {
         console.error('❌ Error dropping indexes:', error);
+        throw error;
+    }
+};
+
+/**
+ * Get index information for all collections
+ */
+const getIndexInfo = async () => {
+    try {
+        const User = mongoose.model('User');
+        const Group = mongoose.model('Group');
+        const Message = mongoose.model('Message');
+        
+        const userIndexes = await User.collection.getIndexes();
+        const groupIndexes = await Group.collection.getIndexes();
+        const messageIndexes = await Message.collection.getIndexes();
+        
+        return {
+            users: userIndexes,
+            groups: groupIndexes,
+            messages: messageIndexes
+        };
+    } catch (error) {
+        console.error('❌ Error getting index info:', error);
+        throw error;
+    }
+};
+
+/**
+ * Check if indexes exist and are optimal
+ */
+const validateIndexes = async () => {
+    try {
+        console.log('🔍 Validating database indexes...');
+        
+        const indexInfo = await getIndexInfo();
+        const requiredIndexes = {
+            users: [
+                { email: 1, isActive: 1 },
+                { groupId: 1, isOnline: 1 },
+                { role: 1, isActive: 1 },
+                { lastSeen: -1 },
+                { createdAt: -1 }
+            ],
+            groups: [
+                { region: 1, isActive: 1 },
+                { createdBy: 1, isActive: 1 },
+                { 'stats.lastActivity': -1 }
+            ],
+            messages: [
+                { groupId: 1, createdAt: -1 },
+                { senderId: 1, createdAt: -1 },
+                { groupId: 1, messageType: 1, createdAt: -1 },
+                { 'deleted.isDeleted': 1, groupId: 1, createdAt: -1 }
+            ]
+        };
+        
+        let allValid = true;
+        
+        for (const [collection, indexes] of Object.entries(requiredIndexes)) {
+            const existingIndexes = indexInfo[collection];
+            
+            for (const requiredIndex of indexes) {
+                const indexExists = existingIndexes.some(index => 
+                    JSON.stringify(index.key) === JSON.stringify(requiredIndex)
+                );
+                
+                if (!indexExists) {
+                    console.warn(`⚠️  Missing index in ${collection}:`, requiredIndex);
+                    allValid = false;
+                }
+            }
+        }
+        
+        if (allValid) {
+            console.log('✅ All required indexes are present');
+        } else {
+            console.log('❌ Some indexes are missing. Run createIndexes() to fix.');
+        }
+        
+        return allValid;
+    } catch (error) {
+        console.error('❌ Error validating indexes:', error);
+        throw error;
     }
 };
 
 module.exports = {
     createIndexes,
-    dropIndexes
+    dropAllIndexes,
+    getIndexInfo,
+    validateIndexes
 };

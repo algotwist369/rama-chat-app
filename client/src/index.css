@@ -1,4 +1,4 @@
-@import "./styles/smooth-transitions.css";
+@import "./styles/enhanced.css";
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

@@ -39,5 +39,15 @@ export const authApi = {
   getUsers: async () => {
     const response = await axiosInstance.get('/auth/users');
     return response.data;
+  },
+
+  updateUser: async (userId, userData) => {
+    const response = await axiosInstance.put(`/auth/users/${userId}`, userData);
+    return response.data;
+  },
+
+  deleteUser: async (userId) => {
+    const response = await axiosInstance.delete(`/auth/users/${userId}`);
+    return response.data;
   }
 };
