@@ -221,7 +221,7 @@ const MessageItem = ({
                 console.log('Quick react button clicked, setting showReactions to true');
                 setShowReactions(true);
               }}
-              className="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+              className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
               title="Add reaction"
             >
               <Smile className="h-3 w-3 sm:h-4 sm:w-4" />
