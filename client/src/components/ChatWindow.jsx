@@ -1,8 +1,10 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Send, Paperclip, Smile } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { Send, Paperclip, Smile, CheckSquare, Square } from 'lucide-react';
 import MessageItem from './MessageItem';
+import MessageSelector from './MessageSelector';
 import LoadingSpinner from './common/LoadingSpinner';
 import socketService from '../sockets/socket';
+import toast from 'react-hot-toast';
 
 const ChatWindow = ({ 
   group, 
@@ -11,11 +13,17 @@ const ChatWindow = ({
   onSendMessage, 
   onEditMessage, 
   onDeleteMessage, 
+  onReactToMessage,
+  onReplyToMessage,
+  replyToMessage,
+  onClearReply,
   loading 
 }) => {
   const [messageText, setMessageText] = useState('');
   const [editingMessage, setEditingMessage] = useState(null);
   const [typingUsers, setTypingUsers] = useState([]);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedMessages, setSelectedMessages] = useState(new Set());
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
   const typingTimeoutRef = useRef(null);
@@ -27,43 +35,56 @@ const ChatWindow = ({
   }, [messages]);
 
   // Typing indicator handlers
-  const handleTypingStart = (data) => {
+  const handleTypingStart = useCallback((data) => {
+    console.log('⌨️ Typing start received:', data, 'Current group:', group?._id);
     if (data.userId !== currentUser.id && data.groupId === group._id) {
       setTypingUsers(prev => {
         const exists = prev.some(user => user.userId === data.userId);
         if (!exists) {
+          console.log('Adding typing user:', data.username);
           return [...prev, { userId: data.userId, username: data.username }];
         }
         return prev;
       });
     }
-  };
+  }, [group, currentUser.id]);
 
-  const handleTypingStop = (data) => {
+  const handleTypingStop = useCallback((data) => {
+    console.log('⌨️ Typing stop received:', data, 'Current group:', group?._id);
     if (data.userId !== currentUser.id && data.groupId === group._id) {
-      setTypingUsers(prev => prev.filter(user => user.userId !== data.userId));
+      setTypingUsers(prev => {
+        const filtered = prev.filter(user => user.userId !== data.userId);
+        console.log('Removing typing user:', data.username, 'Remaining:', filtered.length);
+        return filtered;
+      });
     }
-  };
+  }, [group, currentUser.id]);
 
   // Socket event listeners for typing indicators
   useEffect(() => {
     if (!group) return;
 
+    console.log('Setting up typing listeners for group:', group._id);
     socketService.on('typing:start', handleTypingStart);
     socketService.on('typing:stop', handleTypingStop);
 
     return () => {
+      console.log('Cleaning up typing listeners for group:', group._id);
       socketService.off('typing:start', handleTypingStart);
       socketService.off('typing:stop', handleTypingStop);
     };
-  }, [group, currentUser.id]);
+  }, [group, handleTypingStart, handleTypingStop]);
 
   // Handle typing events
   const handleTyping = () => {
-    if (!group || !socketService.isConnected()) return;
+    if (!group || !socketService.isConnected()) {
+      console.log('Cannot send typing - group:', !!group, 'socket connected:', socketService.isConnected());
+      return;
+    }
 
     if (!isTypingRef.current) {
       isTypingRef.current = true;
+      console.log('Starting typing in group:', group._id);
       socketService.startTyping(group._id);
     }
 
@@ -76,10 +97,49 @@ const ChatWindow = ({
     typingTimeoutRef.current = setTimeout(() => {
       if (isTypingRef.current) {
         isTypingRef.current = false;
+        console.log('Stopping typing in group:', group._id);
         socketService.stopTyping(group._id);
       }
     }, 1000);
   };
+
+  // Clear typing users when group changes
+  useEffect(() => {
+    setTypingUsers([]);
+  }, [group]);
+
+  // Selection handlers
+  const handleSelectMessage = useCallback((messageId) => {
+    setSelectedMessages(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(messageId)) {
+        newSet.delete(messageId);
+      } else {
+        newSet.add(messageId);
+      }
+      return newSet;
+    });
+  }, []);
+
+  const handleClearSelection = useCallback(() => {
+    setSelectedMessages(new Set());
+    setSelectionMode(false);
+  }, []);
+
+  const handleDeleteSelected = useCallback(async (messageIds) => {
+    try {
+      console.log('Deleting messages:', messageIds);
+      // Call the parent's delete function for each message
+      for (const messageId of messageIds) {
+        await onDeleteMessage(messageId);
+      }
+      toast.success(`${messageIds.length} message(s) deleted successfully`);
+      handleClearSelection();
+    } catch (error) {
+      console.error('Failed to delete messages:', error);
+      toast.error('Failed to delete messages');
+    }
+  }, [onDeleteMessage]);
 
   // Cleanup typing timeout on unmount
   useEffect(() => {
@@ -110,7 +170,8 @@ const ChatWindow = ({
 
     const messageData = {
       content: messageText.trim(),
-      messageType: 'text'
+      messageType: 'text',
+      replyTo: replyToMessage?._id || null
     };
 
     if (editingMessage) {
@@ -118,6 +179,10 @@ const ChatWindow = ({
       setEditingMessage(null);
     } else {
       onSendMessage(messageData);
+      // Clear reply state after sending
+      if (replyToMessage) {
+        onClearReply();
+      }
     }
     
     setMessageText('');
@@ -183,6 +248,11 @@ const ChatWindow = ({
                 currentUser={currentUser}
                 onEdit={handleEditMessage}
                 onDelete={onDeleteMessage}
+                onReact={onReactToMessage}
+                onReply={onReplyToMessage}
+                isSelected={selectedMessages.has(message._id)}
+                onSelect={handleSelectMessage}
+                selectionMode={selectionMode}
               />
             ))
         )}
@@ -200,6 +270,28 @@ const ChatWindow = ({
               <button
                 onClick={cancelEdit}
                 className="text-yellow-600 dark:text-yellow-400 hover:text-yellow-800 dark:hover:text-yellow-200"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Reply Indicator */}
+        {replyToMessage && (
+          <div className="mb-3 p-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <span className="text-sm text-blue-800 dark:text-blue-200 font-medium">
+                  Replying to {replyToMessage.senderId?.username || 'Unknown'}:
+                </span>
+                <p className="text-sm text-blue-700 dark:text-blue-300 truncate">
+                  {replyToMessage.content.substring(0, 100)}...
+                </p>
+              </div>
+              <button
+                onClick={onClearReply}
+                className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200 ml-2"
               >
                 ✕
               </button>
@@ -228,7 +320,13 @@ const ChatWindow = ({
                 setMessageText(e.target.value);
                 handleTyping();
               }}
-              placeholder={editingMessage ? "Edit your message..." : "Type a message..."}
+              placeholder={
+                editingMessage 
+                  ? "Edit your message..." 
+                  : replyToMessage 
+                    ? `Reply to ${replyToMessage.senderId?.username || 'Unknown'}...` 
+                    : "Type a message..."
+              }
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-800 dark:text-white resize-none min-h-[40px] max-h-32"
               rows={1}
               onKeyDown={(e) => {
@@ -246,6 +344,20 @@ const ChatWindow = ({
           </div>
           
           <div className="flex items-center space-x-1 flex-shrink-0">
+            {/* Selection Mode Toggle */}
+            <button
+              type="button"
+              onClick={() => setSelectionMode(!selectionMode)}
+              className={`p-2 rounded-lg transition-colors ${
+                selectionMode 
+                  ? 'bg-blue-500 text-white' 
+                  : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'
+              }`}
+              title="Select messages"
+            >
+              {selectionMode ? <CheckSquare className="h-5 w-5" /> : <Square className="h-5 w-5" />}
+            </button>
+
             {/* File Upload */}
             <button
               type="button"
@@ -284,6 +396,14 @@ const ChatWindow = ({
           </div>
         </form>
       </div>
+
+      {/* Message Selector */}
+      <MessageSelector
+        selectedMessages={Array.from(selectedMessages)}
+        onClearSelection={handleClearSelection}
+        onDeleteSelected={handleDeleteSelected}
+        currentUser={currentUser}
+      />
     </div>
   );
 };

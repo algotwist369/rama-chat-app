@@ -9,6 +9,9 @@ import Sidebar from '../components/Sidebar';
 import ChatWindow from '../components/ChatWindow';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import SocketDebugger from '../components/SocketDebugger';
+import NotificationPanel from '../components/NotificationPanel';
+import DebugPanel from '../components/DebugPanel';
+import EmojiPickerTest from '../components/EmojiPickerTest';
 
 // Icons
 import { Bell, Wifi, WifiOff } from 'lucide-react';
@@ -24,8 +27,10 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [socketConnected, setSocketConnected] = useState(false);
   const [showNotificationPanel, setShowNotificationPanel] = useState(false);
-  const [notificationCount] = useState(0);
+  const [notifications, setNotifications] = useState([]);
   const [showSocketDebugger, setShowSocketDebugger] = useState(false);
+  const [showDebugPanel, setShowDebugPanel] = useState(false);
+  const [showEmojiTest, setShowEmojiTest] = useState(false);
 
   // Refs
   const messagesEndRef = useRef(null);
@@ -186,6 +191,54 @@ const Dashboard = () => {
     currentSetMessages(prev => prev.filter(msg => msg._id !== messageId));
   }, []);
 
+  // Handle message reaction
+  const handleMessageReaction = useCallback(({ messageId, reactions, userId, emoji, action }) => {
+    const currentSetMessages = setMessagesRef.current;
+    currentSetMessages(prev =>
+      prev.map(msg => 
+        msg._id === messageId 
+          ? { ...msg, reactions: reactions }
+          : msg
+      )
+    );
+  }, []);
+
+  // Handle notification
+  const handleNotification = useCallback((notification) => {
+    console.log('📢 Notification received:', notification);
+    
+    // Add notification to state
+    const newNotification = {
+      id: Date.now().toString(),
+      ...notification,
+      read: false,
+      createdAt: new Date(notification.createdAt || Date.now())
+    };
+    
+    setNotifications(prev => [newNotification, ...prev.slice(0, 49)]); // Keep last 50 notifications
+    
+    // Show toast notification
+    toast.success(notification.message || 'New notification');
+  }, []);
+
+  // Notification management functions
+  const handleMarkNotificationAsRead = useCallback((notificationId) => {
+    setNotifications(prev =>
+      prev.map(notification =>
+        notification.id === notificationId
+          ? { ...notification, read: true }
+          : notification
+      )
+    );
+  }, []);
+
+  const handleClearAllNotifications = useCallback(() => {
+    setNotifications([]);
+  }, []);
+
+  // Calculate unread notification count
+  const unreadNotificationCount = notifications.filter(n => !n.read).length;
+
   // Send message
   const handleSendMessage = useCallback(async (messageData, callback) => {
     if (!selectedGroup) return;
@@ -267,12 +320,39 @@ const Dashboard = () => {
     if (!window.confirm('Are you sure you want to delete this message?')) return;
 
     try {
-      await messageApi.deleteMessage(messageId);
+      if (socketService.isConnected()) {
+        socketService.emit('message:delete', { messageId, groupId: selectedGroup._id });
+      } else {
+        await messageApi.deleteMessage(messageId);
+      }
       toast.success('Message deleted');
     } catch (error) {
       toast.error('Failed to delete message');
     }
+  }, [selectedGroup]);
+
+  // React to message
+  const handleReactToMessage = useCallback(async (messageId, emoji) => {
+    try {
+      console.log('Reacting to message:', { messageId, emoji });
+      const response = await messageApi.toggleReaction(messageId, emoji);
+      console.log('Reaction sent successfully:', response);
+      toast.success('Reaction added!');
+    } catch (error) {
+      console.error('Failed to react to message:', error);
+      toast.error('Failed to react to message: ' + (error.response?.data?.error || error.message));
+    }
   }, []);
+
+  // Reply to message
+  const handleReplyToMessage = useCallback((message) => {
+    console.log('Replying to message:', message);
+    // Set the reply message in state so ChatWindow can handle it
+    setReplyToMessage(message);
+  }, []);
+
+  // State for reply functionality
+  const [replyToMessage, setReplyToMessage] = useState(null);
 
   // Socket connection management
   useEffect(() => {
@@ -315,6 +395,8 @@ const Dashboard = () => {
     socketService.on('message:new', handleNewMessage);
     socketService.on('message:edited', handleMessageEdited);
     socketService.on('message:deleted', handleMessageDeleted);
+    socketService.on('message:reaction', handleMessageReaction);
+    socketService.on('notification:new', handleNotification);
 
     return () => {
       socketService.off('connect', handleConnect);
@@ -323,6 +405,8 @@ const Dashboard = () => {
       socketService.off('message:new', handleNewMessage);
       socketService.off('message:edited', handleMessageEdited);
       socketService.off('message:deleted', handleMessageDeleted);
+      socketService.off('message:reaction', handleMessageReaction);
+      socketService.off('notification:new', handleNotification);
     };
   }, []); // Remove dependencies to prevent recreation of event listeners
 
@@ -418,6 +502,32 @@ const Dashboard = () => {
                 🔧
               </button>
 
+              {/* Debug Panel Toggle */}
+              <button
+                onClick={() => setShowDebugPanel(!showDebugPanel)}
+                className={`p-2 rounded-lg transition-colors ${
+                  showDebugPanel 
+                    ? 'bg-green-500 text-white' 
+                    : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+                title="Debug Panel"
+              >
+                🐛
+              </button>
+
+              {/* Emoji Test Toggle */}
+              <button
+                onClick={() => setShowEmojiTest(!showEmojiTest)}
+                className={`p-2 rounded-lg transition-colors ${
+                  showEmojiTest 
+                    ? 'bg-purple-500 text-white' 
+                    : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+                title="Emoji Test"
+              >
+                😊
+              </button>
+
               {/* Notifications */}
               <button
                 onClick={() => setShowNotificationPanel(!showNotificationPanel)}
@@ -425,9 +535,9 @@ const Dashboard = () => {
                 title="Notifications"
               >
                 <Bell className="h-5 w-5" />
-                {notificationCount > 0 && (
+                {unreadNotificationCount > 0 && (
                   <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
-                    {notificationCount > 99 ? '99+' : notificationCount}
+                    {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}
                   </span>
                 )}
               </button>
@@ -445,6 +555,10 @@ const Dashboard = () => {
             onSendMessage={handleSendMessage}
             onEditMessage={handleEditMessage}
             onDeleteMessage={handleDeleteMessage}
+            onReactToMessage={handleReactToMessage}
+            onReplyToMessage={handleReplyToMessage}
+            replyToMessage={replyToMessage}
+            onClearReply={() => setReplyToMessage(null)}
             loading={loading}
           />
         ) : (
@@ -463,6 +577,28 @@ const Dashboard = () => {
 
       {/* Socket Debugger */}
       <SocketDebugger isVisible={showSocketDebugger} />
+
+      {/* Notification Panel */}
+      <NotificationPanel
+        isVisible={showNotificationPanel}
+        onClose={() => setShowNotificationPanel(false)}
+        notifications={notifications}
+        onMarkAsRead={handleMarkNotificationAsRead}
+        onClearAll={handleClearAllNotifications}
+      />
+
+      {/* Debug Panel */}
+      <DebugPanel
+        isVisible={showDebugPanel}
+        onClose={() => setShowDebugPanel(false)}
+      />
+
+      {/* Emoji Test */}
+      {showEmojiTest && (
+        <div className="fixed top-16 right-4 z-50">
+          <EmojiPickerTest />
+        </div>
+      )}
 
     </div>
   );

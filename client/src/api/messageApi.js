@@ -84,9 +84,6 @@ export const messageApi = {
     return response.data;
   },
 
-  // Message replies
-  replyToMessage: async (messageId, content, groupId) => {
-    const response = await axiosInstance.post(`/messages/${messageId}/reply`, { content, groupId });
-    return response.data;
-  }
+  // Message replies - handled through regular sendMessage with replyTo field
+  // No separate endpoint needed
 };

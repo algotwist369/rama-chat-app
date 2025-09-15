@@ -784,23 +784,84 @@ function initSocket(server, redisAdapter, app) {
     });
 
     // typing indicator - only emit to the specific group
-    socket.on('typing:start', ({ groupId }) => {
+    socket.on('typing:start', async ({ groupId }) => {
       console.log(`⌨️ User ${user.username} (${socket.userId}) started typing in group: ${groupId}`);
+      
+      // Validate groupId
+      if (!groupId) {
+        console.log('❌ Invalid groupId for typing start');
+        return;
+      }
+
       // Verify user is actually in this group before showing typing indicator
-      socket.to(`group:${groupId}`).emit('typing:start', {
-        userId: socket.userId,
-        username: user.username,
-        groupId: groupId
-      });
+      try {
+        const group = await Group.findById(groupId);
+        if (!group) {
+          console.log('❌ Group not found for typing:', groupId);
+          return;
+        }
+
+        const isMember = group.users.some(id => id.toString() === socket.userId.toString()) ||
+                        group.managers.some(id => id.toString() === socket.userId.toString()) ||
+                        group.createdBy.toString() === socket.userId.toString();
+
+        if (!isMember) {
+          console.log('❌ User not member of group for typing:', groupId);
+          return;
+        }
+
+        // Get room info for debugging
+        const roomSockets = await io.in(`group:${groupId}`).fetchSockets();
+        console.log(`⌨️ Broadcasting typing start to group:${groupId} (${roomSockets.length} sockets)`);
+
+        socket.to(`group:${groupId}`).emit('typing:start', {
+          userId: socket.userId,
+          username: user.username,
+          groupId: groupId
+        });
+      } catch (error) {
+        console.error('Error handling typing start:', error);
+      }
     });
-    socket.on('typing:stop', ({ groupId }) => {
+
+    socket.on('typing:stop', async ({ groupId }) => {
       console.log(`⌨️ User ${user.username} (${socket.userId}) stopped typing in group: ${groupId}`);
+      
+      // Validate groupId
+      if (!groupId) {
+        console.log('❌ Invalid groupId for typing stop');
+        return;
+      }
+
       // Verify user is actually in this group before stopping typing indicator
-      socket.to(`group:${groupId}`).emit('typing:stop', {
-        userId: socket.userId,
-        username: user.username,
-        groupId: groupId
-      });
+      try {
+        const group = await Group.findById(groupId);
+        if (!group) {
+          console.log('❌ Group not found for typing stop:', groupId);
+          return;
+        }
+
+        const isMember = group.users.some(id => id.toString() === socket.userId.toString()) ||
+                        group.managers.some(id => id.toString() === socket.userId.toString()) ||
+                        group.createdBy.toString() === socket.userId.toString();
+
+        if (!isMember) {
+          console.log('❌ User not member of group for typing stop:', groupId);
+          return;
+        }
+
+        // Get room info for debugging
+        const roomSockets = await io.in(`group:${groupId}`).fetchSockets();
+        console.log(`⌨️ Broadcasting typing stop to group:${groupId} (${roomSockets.length} sockets)`);
+
+        socket.to(`group:${groupId}`).emit('typing:stop', {
+          userId: socket.userId,
+          username: user.username,
+          groupId: groupId
+        });
+      } catch (error) {
+        console.error('Error handling typing stop:', error);
+      }
     });
 
     socket.on('disconnect', async () => {
