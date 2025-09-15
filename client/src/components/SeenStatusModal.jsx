@@ -107,9 +107,9 @@ const SeenStatusModal = ({ isVisible, onClose, message, groupMembers = [] }) => 
               <div className="space-y-2">
                 {seenMembers
                   .sort((a, b) => new Date(b.seenAt) - new Date(a.seenAt))
-                  .map((member) => (
+                  .map((member, index) => (
                     <div
-                      key={member._id}
+                      key={member._id || `seen-${index}`}
                       className="flex items-center justify-between p-2 bg-green-50 dark:bg-green-900/20 rounded-lg"
                     >
                       <div className="flex items-center space-x-3">
@@ -153,9 +153,9 @@ const SeenStatusModal = ({ isVisible, onClose, message, groupMembers = [] }) => 
               </div>
               
               <div className="space-y-2">
-                {unseenMembers.map((member) => (
+                {unseenMembers.map((member, index) => (
                   <div
-                    key={member._id}
+                    key={member._id || `unseen-${index}`}
                     className="flex items-center space-x-3 p-2 bg-gray-50 dark:bg-gray-700 rounded-lg"
                   >
                     <div className="w-8 h-8 bg-gray-400 rounded-full flex items-center justify-center">

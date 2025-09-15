@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { MoreVertical, Edit, Trash2, Check, CheckCheck, Smile, Reply, Info } from 'lucide-react';
-import { formatDate } from '../utils/formatDate';
+import { Edit, Trash2, Check, CheckCheck, Smile, Reply, Info } from 'lucide-react';
 
 const MessageItem = ({
   message,
@@ -300,11 +299,6 @@ const MessageItem = ({
               title={`${getSeenCount()} member${getSeenCount() !== 1 ? 's' : ''} seen this message`}
             >
               <Info className="h-3 w-3 text-blue-500 group-hover:text-blue-600" />
-              {getSeenCount() > 1 && (
-                <span className="absolute -top-1 -right-1 bg-blue-500 text-white text-xs rounded-full h-3 w-3 sm:h-4 sm:w-4 flex items-center justify-center text-[8px] sm:text-[10px] font-medium">
-                  {getSeenCount()}
-                </span>
-              )}
             </button>
           )}
 

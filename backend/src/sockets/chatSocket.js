@@ -562,20 +562,26 @@ function initSocket(server, redisAdapter, app) {
 
     // Handle message editing
     socket.on('message:edit', async ({ messageId, content, groupId }) => {
+      console.log(`✏️ Received message:edit event:`, { messageId, content, groupId, userId: socket.userId });
       try {
         // Validate input
         if (!messageId || !content || !groupId) {
+          console.log('✏️ Missing required fields for message edit');
           socket.emit('error', { message: 'Missing required fields for message edit' });
           return;
         }
 
         const message = await Message.findById(messageId);
+        console.log(`✏️ Found message:`, { messageId, messageGroupId: message?.groupId?.toString(), requestedGroupId: groupId });
         if (!message || message.groupId.toString() !== groupId) {
+          console.log('✏️ Message not found or group mismatch');
           socket.emit('error', { message: 'Message not found' });
           return;
         }
 
+        console.log(`✏️ Message sender:`, message.senderId.toString(), 'Socket user:', socket.userId);
         if (message.senderId.toString() !== socket.userId) {
+          console.log('✏️ Not authorized to edit this message');
           socket.emit('error', { message: 'Not authorized to edit this message' });
           return;
         }
@@ -610,13 +616,14 @@ function initSocket(server, redisAdapter, app) {
           .lean();
 
         // Emit edit update to all group members with full message data
+        console.log(`✏️ Broadcasting message:edited to group:${groupId}`);
         io.to(`group:${groupId}`).emit('message:edited', {
           messageId,
           message: populatedMessage,
           timestamp: new Date()
         });
 
-        console.log(`✏️ Message edited: ${messageId}`);
+        console.log(`✏️ Message edited successfully: ${messageId}`);
       } catch (error) {
         console.error('Error editing message:', error);
         socket.emit('error', { message: 'Failed to edit message' });

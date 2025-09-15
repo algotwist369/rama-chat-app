@@ -194,6 +194,8 @@ const Dashboard = () => {
 
   // Handle message edited
   const handleMessageEdited = useCallback(({ messageId, message: editedMessage }) => {
+    console.log('📝 Dashboard: Received message:edited event:', { messageId, editedMessage });
+    
     // Handle both populated and non-populated groupId formats
     const messageGroupId = typeof editedMessage.groupId === 'object'
       ? editedMessage.groupId._id
@@ -202,10 +204,15 @@ const Dashboard = () => {
     const currentSelectedGroup = selectedGroupRef.current;
     const currentSetMessages = setMessagesRef.current;
 
+    console.log('📝 Dashboard: Message group ID:', messageGroupId, 'Current group ID:', currentSelectedGroup?._id);
+
     if (currentSelectedGroup && messageGroupId === currentSelectedGroup._id) {
+      console.log('📝 Dashboard: Updating message in state');
       currentSetMessages(prev =>
         prev.map(msg => msg._id === messageId ? editedMessage : msg)
       );
+    } else {
+      console.log('📝 Dashboard: Message not for current group, ignoring');
     }
   }, []);
 
@@ -517,6 +524,10 @@ const Dashboard = () => {
     socketService.on('message:seen', handleMessageSeen);
     socketService.on('messages:seen', handleMessagesSeen);
     socketService.on('notification:new', handleNotification);
+    socketService.on('error', (error) => {
+      console.error('Socket error:', error);
+      toast.error(error.message || 'Socket error occurred');
+    });
 
     return () => {
       socketService.off('connect', handleConnect);
@@ -529,6 +540,7 @@ const Dashboard = () => {
       socketService.off('message:seen', handleMessageSeen);
       socketService.off('messages:seen', handleMessagesSeen);
       socketService.off('notification:new', handleNotification);
+      socketService.off('error');
     };
   }, []); // Remove dependencies to prevent recreation of event listeners
 
@@ -694,7 +706,7 @@ const Dashboard = () => {
 
             <div className="flex items-center space-x-1 sm:space-x-2 flex-shrink-0">
               {/* Debug buttons - hidden on mobile */}
-              <div className="hidden sm:flex items-center space-x-1">
+              <div className="hidden items-center space-x-1">
                 {/* Socket Debugger Toggle */}
                 <button
                   onClick={() => setShowSocketDebugger(!showSocketDebugger)}
