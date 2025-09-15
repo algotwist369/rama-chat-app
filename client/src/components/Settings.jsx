@@ -215,13 +215,13 @@ const Settings = ({
   if (!isVisible) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-4xl h-[80vh] flex flex-col">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-4xl h-[90vh] sm:h-[80vh] flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+        <div className="flex items-center justify-between p-4 sm:p-6 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center space-x-3">
-            <SettingsIcon className="h-6 w-6 text-blue-500" />
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+            <SettingsIcon className="h-5 w-5 sm:h-6 sm:w-6 text-blue-500" />
+            <h2 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white">
               Settings
             </h2>
           </div>
@@ -235,7 +235,7 @@ const Settings = ({
 
         <div className="flex flex-1 overflow-hidden">
           {/* Sidebar */}
-          <div className="w-64 bg-gray-50 dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700">
+          <div className="hidden sm:block w-48 lg:w-64 bg-gray-50 dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700">
             <nav className="p-4 space-y-2">
               <button
                 onClick={() => setActiveTab('profile')}
@@ -302,14 +302,14 @@ const Settings = ({
           </div>
 
           {/* Content */}
-          <div className="flex-1 overflow-y-auto p-6">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6">
             {activeTab === 'profile' && (
               <div className="max-w-2xl">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">
+                <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6">
                   Profile Settings
                 </h3>
                 
-                <form onSubmit={handleProfileUpdate} className="space-y-6">
+                <form onSubmit={handleProfileUpdate} className="space-y-4 sm:space-y-6">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                       Username
@@ -389,7 +389,7 @@ const Settings = ({
                     </div>
                   </div>
 
-                  <div className="flex justify-end space-x-3">
+                  <div className="flex flex-col sm:flex-row justify-end space-y-2 sm:space-y-0 sm:space-x-3">
                     <button
                       type="button"
                       onClick={onClose}
@@ -400,7 +400,7 @@ const Settings = ({
                     <button
                       type="submit"
                       disabled={loading}
-                      className="px-4 py-2 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 text-white rounded-lg transition-colors flex items-center space-x-2"
+                      className="px-4 py-2 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 text-white rounded-lg transition-colors flex items-center justify-center space-x-2"
                     >
                       <Save className="h-4 w-4" />
                       <span>{loading ? 'Saving...' : 'Save Changes'}</span>

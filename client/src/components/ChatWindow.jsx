@@ -261,15 +261,15 @@ const ChatWindow = ({
   return (
     <div className="flex-1 flex flex-col bg-white dark:bg-gray-900 min-h-0 min-w-0 overflow-hidden">
       {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-4 min-h-0">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-4 space-y-2 sm:space-y-4 min-h-0">
         {loading ? (
           <div className="flex justify-center items-center h-full">
             <LoadingSpinner size="large" />
           </div>
         ) : messages.length === 0 ? (
-          <div className="flex justify-center items-center h-full">
-            <div className="text-center">
-              <h3 className="text-lg font-medium text-gray-500 dark:text-gray-400 mb-2">
+          <div className="flex justify-center items-center h-full p-4">
+            <div className="text-center max-w-sm">
+              <h3 className="text-base sm:text-lg font-medium text-gray-500 dark:text-gray-400 mb-2">
                 No messages yet
               </h3>
               <p className="text-sm text-gray-400 dark:text-gray-500">
@@ -300,16 +300,16 @@ const ChatWindow = ({
       </div>
 
       {/* Message Input */}
-      <div className="border-t border-gray-200 dark:border-gray-700 p-4 flex-shrink-0 min-w-0">
+      <div className="border-t border-gray-200 dark:border-gray-700 p-2 sm:p-4 flex-shrink-0 min-w-0">
         {editingMessage && (
-          <div className="mb-3 p-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+          <div className="mb-2 sm:mb-3 p-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-yellow-800 dark:text-yellow-200">
-                Editing: {editingMessage.content.substring(0, 50)}...
+              <span className="text-xs sm:text-sm text-yellow-800 dark:text-yellow-200 truncate">
+                Editing: {editingMessage.content.substring(0, 30)}...
               </span>
               <button
                 onClick={cancelEdit}
-                className="text-yellow-600 dark:text-yellow-400 hover:text-yellow-800 dark:hover:text-yellow-200"
+                className="text-yellow-600 dark:text-yellow-400 hover:text-yellow-800 dark:hover:text-yellow-200 flex-shrink-0 ml-2"
               >
                 ✕
               </button>
@@ -319,19 +319,19 @@ const ChatWindow = ({
 
         {/* Reply Indicator */}
         {replyToMessage && (
-          <div className="mb-3 p-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+          <div className="mb-2 sm:mb-3 p-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
             <div className="flex items-center justify-between">
-              <div className="flex-1">
-                <span className="text-sm text-blue-800 dark:text-blue-200 font-medium">
+              <div className="flex-1 min-w-0">
+                <span className="text-xs sm:text-sm text-blue-800 dark:text-blue-200 font-medium">
                   Replying to {replyToMessage.senderId?.username || 'Unknown'}:
                 </span>
-                <p className="text-sm text-blue-700 dark:text-blue-300 truncate">
-                  {replyToMessage.content.substring(0, 100)}...
+                <p className="text-xs sm:text-sm text-blue-700 dark:text-blue-300 truncate">
+                  {replyToMessage.content.substring(0, 50)}...
                 </p>
               </div>
               <button
                 onClick={onClearReply}
-                className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200 ml-2"
+                className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200 ml-2 flex-shrink-0"
               >
                 ✕
               </button>
@@ -341,7 +341,7 @@ const ChatWindow = ({
 
         {/* Typing Indicator */}
         {typingUsers.length > 0 && (
-          <div className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400 italic">
+          <div className="px-2 sm:px-4 py-1 sm:py-2 text-xs sm:text-sm text-gray-500 dark:text-gray-400 italic">
             {typingUsers.length === 1 ? (
               `${typingUsers[0].username} is typing...`
             ) : typingUsers.length === 2 ? (
@@ -352,7 +352,7 @@ const ChatWindow = ({
           </div>
         )}
         
-        <form onSubmit={handleSendMessage} className="flex items-end space-x-2 min-w-0">
+        <form onSubmit={handleSendMessage} className="flex items-end space-x-1 sm:space-x-2 min-w-0">
           <div className="flex-1 min-w-0">
             <textarea
               value={messageText}
@@ -368,7 +368,7 @@ const ChatWindow = ({
                     ? `Reply to ${replyToMessage.senderId?.username || 'Unknown'}...` 
                     : "Type a message..."
               }
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-800 dark:text-white resize-none min-h-[40px] max-h-32"
+              className="w-full px-2 sm:px-3 py-2 text-sm sm:text-base border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-800 dark:text-white resize-none min-h-[36px] sm:min-h-[40px] max-h-32"
               rows={1}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
@@ -385,28 +385,28 @@ const ChatWindow = ({
           </div>
           
           <div className="flex items-center space-x-1 flex-shrink-0">
-            {/* Selection Mode Toggle */}
+            {/* Selection Mode Toggle - Hidden on mobile */}
             <button
               type="button"
               onClick={() => setSelectionMode(!selectionMode)}
-              className={`p-2 rounded-lg transition-colors ${
+              className={`hidden sm:block p-1.5 sm:p-2 rounded-lg transition-colors ${
                 selectionMode 
                   ? 'bg-blue-500 text-white' 
                   : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'
               }`}
               title="Select messages"
             >
-              {selectionMode ? <CheckSquare className="h-5 w-5" /> : <Square className="h-5 w-5" />}
+              {selectionMode ? <CheckSquare className="h-4 w-4 sm:h-5 sm:w-5" /> : <Square className="h-4 w-4 sm:h-5 sm:w-5" />}
             </button>
 
             {/* File Upload */}
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              className="p-1.5 sm:p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
               title="Attach file"
             >
-              <Paperclip className="h-5 w-5" />
+              <Paperclip className="h-4 w-4 sm:h-5 sm:w-5" />
             </button>
             <input
               ref={fileInputRef}
@@ -416,23 +416,23 @@ const ChatWindow = ({
               accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt"
             />
 
-            {/* Emoji Button */}
+            {/* Emoji Button - Hidden on mobile */}
             <button
               type="button"
-              className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              className="hidden sm:block p-1.5 sm:p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
               title="Add emoji"
             >
-              <Smile className="h-5 w-5" />
+              <Smile className="h-4 w-4 sm:h-5 sm:w-5" />
             </button>
 
             {/* Send Button */}
             <button
               type="submit"
               disabled={!messageText.trim() && !editingMessage}
-              className="p-2 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+              className="p-1.5 sm:p-2 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
               title="Send message"
             >
-              <Send className="h-5 w-5" />
+              <Send className="h-4 w-4 sm:h-5 sm:w-5" />
             </button>
           </div>
         </form>

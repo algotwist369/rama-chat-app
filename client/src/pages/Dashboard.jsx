@@ -15,7 +15,7 @@ import EmojiPickerTest from '../components/EmojiPickerTest';
 import Settings from '../components/Settings';
 
 // Icons
-import { Bell, Wifi, WifiOff, Settings as SettingsIcon } from 'lucide-react';
+import { Bell, Wifi, WifiOff, Settings as SettingsIcon, Menu, X } from 'lucide-react';
 
 const Dashboard = () => {
   // Auth
@@ -34,6 +34,7 @@ const Dashboard = () => {
   const [showDebugPanel, setShowDebugPanel] = useState(false);
   const [showEmojiTest, setShowEmojiTest] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Refs
   const messagesEndRef = useRef(null);
@@ -634,22 +635,49 @@ const Dashboard = () => {
 
   return (
     <div className="h-screen flex bg-gray-50 dark:bg-gray-900 overflow-hidden">
+      {/* Mobile Sidebar Overlay */}
+      {sidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
       {/* Sidebar */}
-      <Sidebar
-        groups={groups}
-        selectedGroup={selectedGroup}
-        onGroupSelect={setSelectedGroup}
-        onLogout={logout}
-        user={user}
-      />
+      <div className={`
+        fixed lg:static inset-y-0 left-0 z-50 lg:z-auto
+        transform transition-transform duration-300 ease-in-out
+        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+      `}>
+        <Sidebar
+          groups={groups}
+          selectedGroup={selectedGroup}
+          onGroupSelect={(group) => {
+            setSelectedGroup(group);
+            setSidebarOpen(false); // Close sidebar on mobile after selection
+          }}
+          onLogout={logout}
+          user={user}
+          onClose={() => setSidebarOpen(false)}
+        />
+      </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
+      <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden lg:ml-0">
         {/* Header */}
         <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-3 flex-shrink-0">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3 min-w-0 flex-1">
-              <h1 className="text-xl font-semibold text-gray-900 dark:text-white truncate">
+              {/* Mobile Menu Button */}
+              <button
+                onClick={() => setSidebarOpen(true)}
+                className="lg:hidden p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                title="Open menu"
+              >
+                <Menu className="h-5 w-5" />
+              </button>
+              
+              <h1 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white truncate">
                 {selectedGroup?.name || 'RAMA Chat'}
               </h1>
               <div className="flex items-center space-x-2 flex-shrink-0">
@@ -664,45 +692,48 @@ const Dashboard = () => {
               </div>
             </div>
 
-            <div className="flex items-center space-x-2 flex-shrink-0">
-              {/* Socket Debugger Toggle */}
-              <button
-                onClick={() => setShowSocketDebugger(!showSocketDebugger)}
-                className={`p-2 rounded-lg transition-colors ${
-                  showSocketDebugger 
-                    ? 'bg-blue-500 text-white' 
-                    : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-                title="Socket Debugger"
-              >
-                🔧
-              </button>
+            <div className="flex items-center space-x-1 sm:space-x-2 flex-shrink-0">
+              {/* Debug buttons - hidden on mobile */}
+              <div className="hidden sm:flex items-center space-x-1">
+                {/* Socket Debugger Toggle */}
+                <button
+                  onClick={() => setShowSocketDebugger(!showSocketDebugger)}
+                  className={`p-2 rounded-lg transition-colors ${
+                    showSocketDebugger 
+                      ? 'bg-blue-500 text-white' 
+                      : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'
+                  }`}
+                  title="Socket Debugger"
+                >
+                  🔧
+                </button>
 
-              {/* Debug Panel Toggle */}
-              <button
-                onClick={() => setShowDebugPanel(!showDebugPanel)}
-                className={`p-2 rounded-lg transition-colors ${
-                  showDebugPanel 
-                    ? 'bg-green-500 text-white' 
-                    : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-                title="Debug Panel"
-              >
-                🐛
-              </button>
+                {/* Debug Panel Toggle */}
+                <button
+                  onClick={() => setShowDebugPanel(!showDebugPanel)}
+                  className={`p-2 rounded-lg transition-colors ${
+                    showDebugPanel 
+                      ? 'bg-green-500 text-white' 
+                      : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'
+                  }`}
+                  title="Debug Panel"
+                >
+                  🐛
+                </button>
 
-              {/* Emoji Test Toggle */}
-              <button
-                onClick={() => setShowEmojiTest(!showEmojiTest)}
-                className={`p-2 rounded-lg transition-colors ${
-                  showEmojiTest 
-                    ? 'bg-purple-500 text-white' 
-                    : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-                title="Emoji Test"
-              >
-                😊
-              </button>
+                {/* Emoji Test Toggle */}
+                <button
+                  onClick={() => setShowEmojiTest(!showEmojiTest)}
+                  className={`p-2 rounded-lg transition-colors ${
+                    showEmojiTest 
+                      ? 'bg-purple-500 text-white' 
+                      : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'
+                  }`}
+                  title="Emoji Test"
+                >
+                  😊
+                </button>
+              </div>
 
               {/* Settings */}
               <button
@@ -749,14 +780,20 @@ const Dashboard = () => {
             groupMembers={groupMembers}
           />
         ) : (
-          <div className="flex-1 flex items-center justify-center bg-gray-50 dark:bg-gray-900">
-            <div className="text-center">
-              <h2 className="text-2xl font-semibold text-gray-600 dark:text-gray-400 mb-2">
+          <div className="flex-1 flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
+            <div className="text-center max-w-md">
+              <h2 className="text-xl sm:text-2xl font-semibold text-gray-600 dark:text-gray-400 mb-2">
                 Select a group to start chatting
               </h2>
-              <p className="text-gray-500 dark:text-gray-500">
+              <p className="text-sm sm:text-base text-gray-500 dark:text-gray-500">
                 Choose a group from the sidebar to begin your conversation
               </p>
+              <button
+                onClick={() => setSidebarOpen(true)}
+                className="mt-4 lg:hidden px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors"
+              >
+                Open Groups
+              </button>
             </div>
           </div>
         )}

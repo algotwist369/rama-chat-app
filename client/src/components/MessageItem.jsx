@@ -134,17 +134,17 @@ const MessageItem = ({
         </div>
       )}
 
-      <div className={`max-w-xs lg:max-w-md xl:max-w-lg min-w-0 ${isOwnMessage ? 'order-2' : 'order-1'}`}>
+      <div className={`max-w-[85%] sm:max-w-xs lg:max-w-md xl:max-w-lg min-w-0 ${isOwnMessage ? 'order-2' : 'order-1'}`}>
         {/* Message Bubble */}
         <div
-          className={`relative px-4 py-2 rounded-lg min-w-0 transition-all duration-200 ${isOwnMessage
+          className={`relative px-3 sm:px-4 py-2 rounded-lg min-w-0 transition-all duration-200 ${isOwnMessage
             ? 'bg-blue-500 text-white'
             : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white'
             } ${isOptimistic ? 'opacity-70' : ''} ${selectionMode && isSelected ? 'ring-2 ring-blue-500 bg-blue-50 dark:bg-blue-900/20' : ''
             }`}
         >
           {/* Message Content */}
-          <div className={`break-words overflow-wrap-anywhere ${message.isDeleted ? 'italic text-gray-500 dark:text-gray-400' : ''}`}>
+          <div className={`break-words overflow-wrap-anywhere text-sm sm:text-base ${message.isDeleted ? 'italic text-gray-500 dark:text-gray-400' : ''}`}>
             {message.isDeleted ? (
               <span className="flex items-center">
                 <span className="mr-2">🗑️</span>
@@ -166,7 +166,7 @@ const MessageItem = ({
               <div className="text-xs opacity-80">
                 Replying to {message.replyTo.senderId?.username || 'Unknown'}:
               </div>
-              <div className="text-sm truncate">
+              <div className="text-xs sm:text-sm truncate">
                 {message.replyTo.content}
               </div>
             </div>
@@ -176,8 +176,8 @@ const MessageItem = ({
           {message.file && (
             <div className="mt-2 p-2 bg-white/10 rounded">
               <div className="flex items-center space-x-2">
-                <span className="text-sm">📎</span>
-                <span className="text-sm truncate">{message.file.name}</span>
+                <span className="text-xs sm:text-sm">📎</span>
+                <span className="text-xs sm:text-sm truncate">{message.file.name}</span>
               </div>
             </div>
           )}
@@ -224,24 +224,24 @@ const MessageItem = ({
               className="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
               title="Add reaction"
             >
-              <Smile className="h-4 w-4" />
+              <Smile className="h-3 w-3 sm:h-4 sm:w-4" />
             </button>
           </div>
 
           {/* Message Actions Menu - Available for all users */}
           {!isOptimistic && !message.isDeleted && (
-            <div className={`border border-red-500 absolute top-0 ${isOwnMessage ? 'right-0 transform translate-x-full' : 'left-0 transform -translate-x-full'} opacity-0 group-hover:opacity-100 transition-opacity`}>
+            <div className={`absolute top-0 ${isOwnMessage ? 'right-0 transform translate-x-full' : 'left-0 transform -translate-x-full'} opacity-0 group-hover:opacity-100 transition-opacity`}>
               <div className="relative">
                 <div
                   className={`absolute ${isOwnMessage ? "right-0" : "left-0"
-                    } bottom-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-10 flex space-x-2 px-2 py-1`}
+                    } bottom-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-10 flex space-x-1 sm:space-x-2 px-1 sm:px-2 py-1`}
                 >
                   {/* Reply */}
                   <button
                     onClick={handleReply}
-                    className="relative group p-2 flex items-center justify-center text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                    className="relative group p-1.5 sm:p-2 flex items-center justify-center text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
                   >
-                    <Reply className="h-4 w-4" />
+                    <Reply className="h-3 w-3 sm:h-4 sm:w-4" />
                     {/* Tooltip */}
                     <span className="absolute bottom-full mb-1 px-2 py-1 text-xs text-white bg-black rounded opacity-0 group-hover:opacity-100 transition whitespace-nowrap">
                       Reply
@@ -253,9 +253,9 @@ const MessageItem = ({
                     <>
                       <button
                         onClick={handleEdit}
-                        className="relative group p-2 flex items-center justify-center text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                        className="relative group p-1.5 sm:p-2 flex items-center justify-center text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
                       >
-                        <Edit className="h-4 w-4" />
+                        <Edit className="h-3 w-3 sm:h-4 sm:w-4" />
                         <span className="absolute bottom-full mb-1 px-2 py-1 text-xs text-white bg-black rounded opacity-0 group-hover:opacity-100 transition whitespace-nowrap">
                           Edit
                         </span>
@@ -263,9 +263,9 @@ const MessageItem = ({
 
                       <button
                         onClick={handleDelete}
-                        className="relative group p-2 flex items-center justify-center text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                        className="relative group p-1.5 sm:p-2 flex items-center justify-center text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
                       >
-                        <Trash2 className="h-4 w-4" />
+                        <Trash2 className="h-3 w-3 sm:h-4 sm:w-4" />
                         <span className="absolute bottom-full mb-1 px-2 py-1 text-xs text-white bg-black rounded opacity-0 group-hover:opacity-100 transition whitespace-nowrap">
                           Delete
                         </span>
@@ -292,12 +292,12 @@ const MessageItem = ({
           {isOwnMessage && hasSeenStatus() && (
             <button
               onClick={handleShowSeenStatus}
-              className="ml-1 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors group relative"
+              className="ml-1 p-0.5 sm:p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors group relative"
               title={`${getSeenCount()} member${getSeenCount() !== 1 ? 's' : ''} seen this message`}
             >
               <Info className="h-3 w-3 text-blue-500 group-hover:text-blue-600" />
               {getSeenCount() > 1 && (
-                <span className="absolute -top-1 -right-1 bg-blue-500 text-white text-xs rounded-full h-4 w-4 flex items-center justify-center text-[10px] font-medium">
+                <span className="absolute -top-1 -right-1 bg-blue-500 text-white text-xs rounded-full h-3 w-3 sm:h-4 sm:w-4 flex items-center justify-center text-[8px] sm:text-[10px] font-medium">
                   {getSeenCount()}
                 </span>
               )}
@@ -314,7 +314,7 @@ const MessageItem = ({
 
         {/* Sender Name (for other users' messages) */}
         {!isOwnMessage && message.senderId?.username && (
-          <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+          <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-1">
             {message.senderId.username}
           </div>
         )}
@@ -323,13 +323,13 @@ const MessageItem = ({
       {/* Reactions Picker - Portal */}
       {showReactions && createPortal(
         <div
-          className="fixed bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-3 z-[9999]"
+          className="fixed bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-2 sm:p-3 z-[9999]"
           style={{
             left: `${pickerPosition.x}px`,
             top: `${pickerPosition.y}px`
           }}
         >
-          <div className="flex flex-wrap gap-2 max-w-48">
+          <div className="flex flex-wrap gap-1 sm:gap-2 max-w-40 sm:max-w-48">
             {commonEmojis.map(emoji => (
               <button
                 key={emoji}
@@ -337,14 +337,14 @@ const MessageItem = ({
                   console.log('Emoji clicked:', emoji);
                   handleReact(emoji);
                 }}
-                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors text-lg hover:scale-110 transform"
+                className="p-1.5 sm:p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors text-base sm:text-lg hover:scale-110 transform"
                 title={`React with ${emoji}`}
               >
                 {emoji}
               </button>
             ))}
           </div>
-          <div className="text-xs text-gray-500 dark:text-gray-400 mt-2 text-center">
+          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 sm:mt-2 text-center">
             Click to react
           </div>
         </div>,
