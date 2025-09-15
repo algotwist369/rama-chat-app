@@ -314,14 +314,18 @@ const Dashboard = () => {
 
   // Edit message
   const handleEditMessage = useCallback(async (messageId, content) => {
+    console.log('Dashboard: handleEditMessage called with:', { messageId, content, selectedGroup: selectedGroup?._id });
     try {
       if (socketService.isConnected()) {
+        console.log('Dashboard: Using socket to edit message');
         socketService.editMessage(messageId, content, selectedGroup._id);
       } else {
+        console.log('Dashboard: Using API to edit message');
         await messageApi.editMessage(messageId, { content });
       }
       toast.success('Message updated');
     } catch (error) {
+      console.error('Dashboard: Error editing message:', error);
       toast.error('Failed to update message');
     }
   }, [selectedGroup]);

@@ -45,6 +45,12 @@ const MessageItem = ({
 
   const handleEdit = () => {
     console.log('MessageItem: Editing message:', message._id);
+    console.log('MessageItem: Message content:', message.content);
+    console.log('MessageItem: onEdit handler:', onEdit);
+    console.log('MessageItem: isOwnMessage:', isOwnMessage);
+    console.log('MessageItem: currentUser:', currentUser);
+    console.log('MessageItem: message.senderId:', message.senderId);
+    
     if (onEdit) {
       onEdit(message);
     } else {
@@ -240,13 +246,13 @@ const MessageItem = ({
                       <span>Reply</span>
                     </button>
                     
-                    <button
+                    {/* <button
                       onClick={() => setShowReactions(true)}
                       className="w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2"
                     >
                       <Smile className="h-3 w-3" />
                       <span>React</span>
-                    </button>
+                    </button> */}
                     
                     {isOwnMessage && (
                       <>

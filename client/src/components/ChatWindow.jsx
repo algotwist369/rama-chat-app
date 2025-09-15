@@ -109,6 +109,16 @@ const ChatWindow = ({
     setTypingUsers([]);
   }, [group]);
 
+  // Debug: Monitor editingMessage state changes
+  useEffect(() => {
+    console.log('ChatWindow: editingMessage state changed to:', editingMessage);
+  }, [editingMessage]);
+
+  // Debug: Monitor messageText state changes
+  useEffect(() => {
+    console.log('ChatWindow: messageText state changed to:', messageText);
+  }, [messageText]);
+
   // Selection handlers
   const handleSelectMessage = useCallback((messageId) => {
     setSelectedMessages(prev => {
@@ -207,6 +217,9 @@ const ChatWindow = ({
 
   // Handle edit message
   const handleEditMessage = (message) => {
+    console.log('ChatWindow: handleEditMessage called with:', message);
+    console.log('ChatWindow: Setting editingMessage to:', message);
+    console.log('ChatWindow: Setting messageText to:', message.content);
     setEditingMessage(message);
     setMessageText(message.content);
   };
@@ -315,6 +328,7 @@ const ChatWindow = ({
             <textarea
               value={messageText}
               onChange={(e) => {
+                console.log('ChatWindow: Input value changed to:', e.target.value);
                 setMessageText(e.target.value);
                 handleTyping();
               }}
