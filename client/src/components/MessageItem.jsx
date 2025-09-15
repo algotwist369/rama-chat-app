@@ -135,6 +135,12 @@ const MessageItem = ({
       )}
 
       <div className={`max-w-[85%] sm:max-w-xs lg:max-w-md xl:max-w-lg min-w-0 ${isOwnMessage ? 'order-2' : 'order-1'}`}>
+        {/* Sender Name (for other users' messages) */}
+        {!isOwnMessage && message.senderId?.username && (
+          <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-1">
+            {message.senderId.username}
+          </div>
+        )}
         {/* Message Bubble */}
         <div
           className={`relative px-3 sm:px-4 py-2 rounded-lg min-w-0 transition-all duration-200 ${isOwnMessage
@@ -147,7 +153,7 @@ const MessageItem = ({
           <div className={`break-words overflow-wrap-anywhere text-sm sm:text-base ${message.isDeleted ? 'italic text-gray-500 dark:text-gray-400' : ''}`}>
             {message.isDeleted ? (
               <span className="flex items-center">
-                <span className="mr-2">🗑️</span>
+                <span className="mr-2">⊘</span>
                 {message.content}
               </span>
             ) : (
@@ -211,10 +217,6 @@ const MessageItem = ({
               </div>
             )}
 
-
-
-
-
             {/* Quick React Button */}
             <button
               onClick={() => {
@@ -231,49 +233,51 @@ const MessageItem = ({
           {/* Message Actions Menu - Available for all users */}
           {!isOptimistic && !message.isDeleted && (
             <div className={`absolute top-0 ${isOwnMessage ? 'right-0 transform translate-x-full' : 'left-0 transform -translate-x-full'} opacity-0 group-hover:opacity-100 transition-opacity`}>
+              {/* Message Actions Menu - Available for all users */}
               <div className="relative">
-                <div
-                  className={`absolute ${isOwnMessage ? "right-0" : "left-0"
-                    } bottom-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-10 flex space-x-1 sm:space-x-2 px-1 sm:px-2 py-1`}
-                >
-                  {/* Reply */}
-                  <button
-                    onClick={handleReply}
-                    className="relative group p-1.5 sm:p-2 flex items-center justify-center text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                <div>
+                  <div
+                    className={`absolute ${isOwnMessage ? "right-0" : "left-0"
+                      } bottom-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-10 flex space-x-1 sm:space-x-2 px-1 sm:px-2 py-1`}
                   >
-                    <Reply className="h-3 w-3 sm:h-4 sm:w-4" />
-                    {/* Tooltip */}
-                    <span className="absolute bottom-full mb-1 px-2 py-1 text-xs text-white bg-black rounded opacity-0 group-hover:opacity-100 transition whitespace-nowrap">
-                      Reply
-                    </span>
-                  </button>
+                    {/* Reply */}
+                    <button
+                      onClick={handleReply}
+                      className="relative group p-1.5 sm:p-2 flex items-center justify-center text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                    >
+                      <Reply className="h-3 w-3 sm:h-4 sm:w-4" />
+                      {/* Tooltip */}
+                      <span className="absolute bottom-full mb-1 px-2 py-1 text-xs text-white bg-black rounded opacity-0 group-hover:opacity-100 transition whitespace-nowrap">
+                        Reply
+                      </span>
+                    </button>
 
-                  {/* Edit (only for own messages) */}
-                  {isOwnMessage && (
-                    <>
-                      <button
-                        onClick={handleEdit}
-                        className="relative group p-1.5 sm:p-2 flex items-center justify-center text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-                      >
-                        <Edit className="h-3 w-3 sm:h-4 sm:w-4" />
-                        <span className="absolute bottom-full mb-1 px-2 py-1 text-xs text-white bg-black rounded opacity-0 group-hover:opacity-100 transition whitespace-nowrap">
-                          Edit
-                        </span>
-                      </button>
+                    {/* Edit (only for own messages) */}
+                    {isOwnMessage && (
+                      <>
+                        <button
+                          onClick={handleEdit}
+                          className="relative group p-1.5 sm:p-2 flex items-center justify-center text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                        >
+                          <Edit className="h-3 w-3 sm:h-4 sm:w-4" />
+                          <span className="absolute bottom-full mb-1 px-2 py-1 text-xs text-white bg-black rounded opacity-0 group-hover:opacity-100 transition whitespace-nowrap">
+                            Edit
+                          </span>
+                        </button>
 
-                      <button
-                        onClick={handleDelete}
-                        className="relative group p-1.5 sm:p-2 flex items-center justify-center text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-                      >
-                        <Trash2 className="h-3 w-3 sm:h-4 sm:w-4" />
-                        <span className="absolute bottom-full mb-1 px-2 py-1 text-xs text-white bg-black rounded opacity-0 group-hover:opacity-100 transition whitespace-nowrap">
-                          Delete
-                        </span>
-                      </button>
-                    </>
-                  )}
+                        <button
+                          onClick={handleDelete}
+                          className="relative group p-1.5 sm:p-2 flex items-center justify-center text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                        >
+                          <Trash2 className="h-3 w-3 sm:h-4 sm:w-4" />
+                          <span className="absolute bottom-full mb-1 px-2 py-1 text-xs text-white bg-black rounded opacity-0 group-hover:opacity-100 transition whitespace-nowrap">
+                            Delete
+                          </span>
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
-
               </div>
             </div>
           )}
@@ -312,12 +316,6 @@ const MessageItem = ({
           )}
         </div>
 
-        {/* Sender Name (for other users' messages) */}
-        {!isOwnMessage && message.senderId?.username && (
-          <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-1">
-            {message.senderId.username}
-          </div>
-        )}
       </div>
 
       {/* Reactions Picker - Portal */}

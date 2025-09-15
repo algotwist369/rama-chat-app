@@ -382,7 +382,7 @@ const Dashboard = () => {
         socketService.editMessage(messageId, content, selectedGroup._id);
       } else {
         console.log('Dashboard: Using API to edit message');
-        await messageApi.editMessage(messageId, { content });
+        await messageApi.editMessage(messageId, content);
       }
       toast.success('Message updated');
     } catch (error) {
