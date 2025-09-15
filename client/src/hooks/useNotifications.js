@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { notificationApi } from '../api/notificationApi';
+import { notificationApi } from '../api';
 import toast from 'react-hot-toast';
 import envConfig from '../config/environment';
 

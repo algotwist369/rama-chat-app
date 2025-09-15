@@ -79,13 +79,8 @@ export const messageApi = {
   },
 
   // Message reactions
-  addReaction: async (messageId, emoji) => {
+  toggleReaction: async (messageId, emoji) => {
     const response = await axiosInstance.post(`/messages/${messageId}/reactions`, { emoji });
-    return response.data;
-  },
-
-  removeReaction: async (messageId, emoji) => {
-    const response = await axiosInstance.delete(`/messages/${messageId}/reactions`, { data: { emoji } });
     return response.data;
   },
 

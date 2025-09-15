@@ -1,89 +1,109 @@
-import React, { useState, useEffect } from 'react';
+import React, { Suspense } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
-import { AuthProvider, useAuth as useAuthContext } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import ErrorBoundary from './components/ErrorBoundary';
+import LoadingSpinner from './components/common/LoadingSpinner';
+
+// Import components directly first to test
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
-import AdminPanel from './pages/EnhancedAdminPanel';
-import './styles/chat-animations.css';
+import AdminPanel from './pages/AdminPanel';
 
-const AppContent = () => {
-  const { isAuthenticated, user, loading } = useAuthContext();
-  const [currentPage, setCurrentPage] = useState('login');
-
-  useEffect(() => {
-    // Check URL hash for routing
-    const hash = window.location.hash.slice(1);
-    if (hash === 'register') {
-      setCurrentPage('register');
-    } else {
-      setCurrentPage('login');
-    }
-  }, []);
-
-  useEffect(() => {
-    // Update URL hash when page changes
-    window.location.hash = currentPage;
-  }, [currentPage]);
-
+// Protected Route Component
+const ProtectedRoute = ({ children }) => {
+  const { user, loading } = useAuth();
+  
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading...</p>
-        </div>
-      </div>
-    );
+    return <LoadingSpinner />;
   }
-
-  if (!isAuthenticated) {
-    if (currentPage === 'register') {
-      return <Register onGoToLogin={() => setCurrentPage('login')} />;
-    }
-    return <Login onGoToRegister={() => setCurrentPage('register')} />;
-  }
-
-  // Route based on user role
-  if (user?.role === 'admin') {
-    return <AdminPanel />;
-  }
-
-  return <Dashboard />;
+  
+  return user ? children : <Navigate to="/login" replace />;
 };
 
-const App = () => {
+// Admin Route Component
+const AdminRoute = ({ children }) => {
+  const { user, loading } = useAuth();
+  
+  if (loading) {
+    return <LoadingSpinner />;
+  }
+  
+  if (!user) return <Navigate to="/login" replace />;
+  if (user.role !== 'admin') return <Navigate to="/dashboard" replace />;
+  
+  return children;
+};
+
+function App() {
   return (
-    <AuthProvider>
-      <div className="App">
-        <AppContent />
-        <Toaster
-          position="top-right"
-          toastOptions={{
-            duration: 4000,
-            style: {
-              background: '#363636',
-              color: '#fff',
-            },
-            success: {
-              duration: 3000,
-              iconTheme: {
-                primary: '#4ade80',
-                secondary: '#fff',
-              },
-            },
-            error: {
-              duration: 4000,
-              iconTheme: {
-                primary: '#ef4444',
-                secondary: '#fff',
-              },
-            },
-          }}
-        />
-      </div>
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+          <div className="App">
+            <Suspense fallback={<LoadingSpinner />}>
+              <Routes>
+                {/* Public Routes */}
+                <Route path="/login" element={<Login />} />
+                <Route path="/register" element={<Register />} />
+                
+                {/* Protected Routes */}
+                <Route 
+                  path="/dashboard" 
+                  element={
+                    <ProtectedRoute>
+                      <Dashboard />
+                    </ProtectedRoute>
+                  } 
+                />
+                
+                {/* Admin Routes */}
+                <Route 
+                  path="/admin" 
+                  element={
+                    <AdminRoute>
+                      <AdminPanel />
+                    </AdminRoute>
+                  } 
+                />
+                
+                {/* Default redirect */}
+                <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                <Route path="*" element={<Navigate to="/dashboard" replace />} />
+              </Routes>
+            </Suspense>
+            
+            {/* Global Toast Notifications */}
+            <Toaster
+              position="top-right"
+              toastOptions={{
+                duration: 4000,
+                style: {
+                  background: '#363636',
+                  color: '#fff',
+                },
+                success: {
+                  duration: 3000,
+                  iconTheme: {
+                    primary: '#4ade80',
+                    secondary: '#fff',
+                  },
+                },
+                error: {
+                  duration: 5000,
+                  iconTheme: {
+                    primary: '#ef4444',
+                    secondary: '#fff',
+                  },
+                },
+              }}
+            />
+          </div>
+        </Router>
+      </AuthProvider>
+    </ErrorBoundary>
   );
-};
+}
 
 export default App;

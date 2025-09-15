@@ -7,6 +7,9 @@ export default defineConfig({
   css: {
     postcss: './postcss.config.js',
   },
+  optimizeDeps: {
+    include: ['socket.io-client', 'react', 'react-dom', 'react-router-dom', 'react-hot-toast', 'axios', 'lucide-react']
+  },
   build: {
     outDir: 'dist',
     sourcemap: false,

@@ -1,5 +1,6 @@
 const express = require('express');
 const mongoose = require('mongoose');
+const Message = require('../models/Message');
 const {
     sendMessage,
     getMessages,
@@ -69,6 +70,66 @@ router.post('/:messageId/forward',
     messageSendLimiter, 
     validate(messageSchemas.forwardMessage), 
     forwardMessage
+);
+
+// Message reactions routes
+router.post('/:messageId/reactions', 
+    validateObjectId('messageId'), 
+    messageSendLimiter, 
+    async (req, res) => {
+        try {
+            const { messageId } = req.params;
+            const { emoji } = req.body;
+            const userId = req.user._id;
+            
+            const message = await Message.findById(messageId);
+            if (!message) {
+                return res.status(404).json({ error: 'Message not found' });
+            }
+            
+            // Check if user already reacted with this emoji
+            const existingReaction = message.reactions.find(
+                r => r.user.toString() === userId.toString() && r.emoji === emoji
+            );
+            
+            if (existingReaction) {
+                // Remove reaction
+                message.reactions = message.reactions.filter(
+                    r => !(r.user.toString() === userId.toString() && r.emoji === emoji)
+                );
+            } else {
+                // Add reaction
+                message.reactions.push({
+                    user: userId,
+                    emoji: emoji,
+                    createdAt: new Date()
+                });
+            }
+            
+            await message.save();
+            
+            // Emit reaction update to all group members
+            const io = req.app.get('io');
+            if (io) {
+                io.to(`group:${message.groupId}`).emit('message:reaction', {
+                    messageId,
+                    reactions: message.reactions,
+                    userId: userId,
+                    emoji,
+                    action: existingReaction ? 'removed' : 'added',
+                    timestamp: new Date()
+                });
+            }
+            
+            res.json({ 
+                message: 'Reaction updated successfully',
+                reactions: message.reactions
+            });
+        } catch (error) {
+            console.error('Error handling reaction:', error);
+            res.status(500).json({ error: 'Failed to update reaction' });
+        }
+    }
 );
 
 module.exports = router;

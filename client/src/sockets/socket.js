@@ -1,481 +1,201 @@
 import { io } from 'socket.io-client';
-import envConfig from '../config/environment';
 
 class SocketService {
   constructor() {
     this.socket = null;
-    this.listeners = new Map();
-    this.recentEvents = new Map(); // Track recent events to prevent duplicates
-    this.joinedGroups = new Set(); // Track which groups we've joined
+    this.connected = false;
+    this.eventListeners = new Map();
+    this.recentEvents = new Map();
   }
 
   connect(token) {
-    // Validate token before attempting connection
-    if (!token) {
-      console.error('No token provided for socket connection');
-      return null;
+    if (this.socket?.connected) {
+      console.log('Socket already connected');
+      return;
     }
 
-    // Check if token is valid before attempting connection
-    if (!this.hasValidToken()) {
-      console.error('Invalid or expired token, cannot connect socket');
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      window.location.href = '/login';
-      return null;
-    }
-
-    // If already connected with the same token, return existing socket
-    if (this.socket && this.socket.connected) {
-      console.log('Socket already connected, reusing connection');
-      return this.socket;
-    }
-
-    // Disconnect existing socket if it exists but is not connected
-    if (this.socket && !this.socket.connected) {
-      console.log('Disconnecting existing socket before reconnecting...');
-      this.socket.disconnect();
-      this.socket = null;
-    }
-
-    const SOCKET_URL = envConfig.getSocketUrl();
-    console.log('Attempting to connect to:', SOCKET_URL);
-    console.log('Using token:', token ? 'Present' : 'Missing');
+    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:9080';
     
-    this.socket = io(SOCKET_URL, {
+    console.log('Connecting to socket server:', backendUrl);
+    
+    this.socket = io(backendUrl, {
       auth: { token },
-      transports: ['polling', 'websocket'], // Start with polling, then upgrade to websocket
-      timeout: envConfig.get('SOCKET_TIMEOUT', 20000),
-      forceNew: true, // Force new connection
-      reconnection: true, // Enable reconnection for production
-      reconnectionAttempts: envConfig.get('SOCKET_RECONNECTION_ATTEMPTS', 10), // Increased attempts
-      reconnectionDelay: envConfig.get('SOCKET_RECONNECTION_DELAY', 1000), // Faster initial delay
-      reconnectionDelayMax: envConfig.get('SOCKET_RECONNECTION_DELAY_MAX', 5000), // Reduced max delay
-      maxReconnectionAttempts: envConfig.get('SOCKET_RECONNECTION_ATTEMPTS', 10),
-      autoConnect: true,
-      upgrade: true, // Allow transport upgrades
-      rememberUpgrade: false, // Don't remember upgrade to allow fallback to polling
-      randomizationFactor: 0.5, // Add randomization to prevent thundering herd
-      pingTimeout: 60000, // Increase ping timeout
-      pingInterval: 25000 // Increase ping interval
+      transports: ['websocket', 'polling'],
+      timeout: 20000,
+      forceNew: true,
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000
     });
 
     this.socket.on('connect', () => {
-      console.log('Connected to server with ID:', this.socket.id);
-      console.log('Socket transport:', this.socket.io.engine.transport.name);
-      
-      // Rejoin all previously joined groups
-      console.log('Rejoining groups after reconnection:', Array.from(this.joinedGroups));
-      this.joinedGroups.forEach(groupId => {
-        this.emit('group:join', { groupId });
-      });
+      console.log('Socket connected:', this.socket.id);
+      this.connected = true;
     });
 
     this.socket.on('disconnect', (reason) => {
-      console.log('Disconnected from server. Reason:', reason);
-      if (reason === 'io server disconnect') {
-        // Server disconnected the client, need to reconnect manually
-        console.log('Server disconnected client, attempting to reconnect...');
-        this.socket.connect();
-      }
+      console.log('Socket disconnected:', reason);
+      this.connected = false;
     });
 
     this.socket.on('connect_error', (error) => {
       console.error('Socket connection error:', error);
-      console.log('Socket event received: connect_error', error);
-      
-      // Handle authentication errors specifically
-      if (error.message === 'unauth' || error.message === 'Authentication error') {
-        console.error('Socket authentication failed - token may be invalid or expired');
-        // Clear invalid token and redirect to login
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
-        window.location.href = '/login';
-      } else if (error.message === 'Transport unknown' || error.message.includes('websocket error')) {
-        console.log('Transport error, will retry with different transport');
-        // Force fallback to polling if websocket fails
-        if (this.socket.io.engine.transport.name === 'websocket') {
-          console.log('WebSocket failed, forcing fallback to polling');
-          this.socket.io.engine.upgrade = false;
-        }
-      } else if (error.message === 'Connection refused' || error.message.includes('ERR_CONNECTION_REFUSED')) {
-        console.error('Backend server is not running. Please start the backend server.');
-        // Don't retry aggressively if server is down
-        this.socket.io.reconnection = false;
-      } else {
-        console.log('Connection error, will retry automatically');
-      }
-    });
-
-    this.socket.on('error', (error) => {
-      console.error('Socket error:', error);
+      this.connected = false;
     });
 
     this.socket.on('reconnect', (attemptNumber) => {
       console.log('Socket reconnected after', attemptNumber, 'attempts');
-    });
-
-    this.socket.on('reconnect_attempt', (attemptNumber) => {
-      console.log('Socket reconnection attempt:', attemptNumber);
+      this.connected = true;
     });
 
     this.socket.on('reconnect_error', (error) => {
       console.error('Socket reconnection error:', error);
-      console.log('Failed to reconnect socket');
     });
 
     this.socket.on('reconnect_failed', () => {
       console.error('Socket reconnection failed');
-      console.log('Failed to reconnect socket');
+      this.connected = false;
     });
-
-    return this.socket;
   }
 
   disconnect() {
     if (this.socket) {
       this.socket.disconnect();
       this.socket = null;
+      this.connected = false;
     }
-    // Clear recent events and joined groups when disconnecting
-    this.recentEvents.clear();
-    this.joinedGroups.clear();
   }
 
-  // Check if an event is a duplicate (same event with same data within 1 second)
-  isDuplicateEvent(event, data) {
-    const eventKey = `${event}_${JSON.stringify(data)}`;
-    const now = Date.now();
-    
-    if (this.recentEvents.has(eventKey)) {
-      const lastTime = this.recentEvents.get(eventKey);
-      if (now - lastTime < 1000) { // 1 second window
-        return true;
-      }
-    }
-    
-    this.recentEvents.set(eventKey, now);
-    
-    // Clean up old events (older than 5 seconds)
-    for (const [key, time] of this.recentEvents.entries()) {
-      if (now - time > 5000) {
-        this.recentEvents.delete(key);
-      }
-    }
-    
-    return false;
-  }
-
+  // Event handling
   on(event, callback) {
+    if (!this.eventListeners.has(event)) {
+      this.eventListeners.set(event, []);
+    }
+    this.eventListeners.get(event).push(callback);
+
     if (this.socket) {
-      // Check if this callback is already registered for this event
-      if (this.listeners.has(event)) {
-        const existingListeners = this.listeners.get(event);
-        const alreadyExists = existingListeners.some(l => l.callback === callback);
-        if (alreadyExists) {
-          console.warn(`Listener already exists for event: ${event}`);
-          return;
-        }
-      }
-      
-      // Create a wrapper function that we can track
-      const wrapper = (data) => {
-        // Check for duplicate events
+      this.socket.on(event, (data) => {
+        // Prevent duplicate events
         if (this.isDuplicateEvent(event, data)) {
-          console.log(`Duplicate event detected, skipping: ${event}`, data);
+          console.log(`🔄 Duplicate event prevented: ${event}`, data);
           return;
         }
         
-        console.log(`Socket event received: ${event}`, data);
+        console.log(`📡 Socket event received: ${event}`, data);
         callback(data);
-      };
-      
-      this.socket.on(event, wrapper);
-      
-      // Store the wrapper for cleanup
-      if (!this.listeners.has(event)) {
-        this.listeners.set(event, []);
-      }
-      this.listeners.get(event).push({ callback, wrapper });
-    } else {
-      console.warn(`Socket not connected when trying to listen to ${event}`);
+      });
     }
   }
 
   off(event, callback) {
-    if (this.socket && this.listeners.has(event)) {
-      const eventListeners = this.listeners.get(event);
-      const listenerIndex = eventListeners.findIndex(l => l.callback === callback);
-      
-      if (listenerIndex !== -1) {
-        const { wrapper } = eventListeners[listenerIndex];
-        this.socket.off(event, wrapper);
-        eventListeners.splice(listenerIndex, 1);
-        
-        if (eventListeners.length === 0) {
-          this.listeners.delete(event);
-        }
+    if (this.eventListeners.has(event)) {
+      const listeners = this.eventListeners.get(event);
+      const index = listeners.indexOf(callback);
+      if (index > -1) {
+        listeners.splice(index, 1);
       }
     }
-  }
 
-  removeAllListeners() {
     if (this.socket) {
-      this.socket.removeAllListeners();
-      this.listeners.clear();
+      this.socket.off(event, callback);
     }
-    // Clear recent events and joined groups when removing all listeners
-    this.recentEvents.clear();
-    this.joinedGroups.clear();
   }
 
   emit(event, data, callback) {
-    if (this.socket && this.socket.connected) {
+    if (this.socket?.connected) {
+      console.log(`📤 Socket event emitted: ${event}`, data);
       this.socket.emit(event, data, callback);
     } else {
-      console.warn(`Socket not connected when trying to emit ${event}. Socket exists: ${!!this.socket}, Connected: ${this.socket?.connected}`);
-      
-      // If socket exists but not connected, try to reconnect with fresh token
-      if (this.socket && !this.socket.connected) {
-        console.log('Attempting to reconnect socket...');
-        const token = localStorage.getItem('token');
-        if (token) {
-          this.connect(token);
-          
-          // Wait a bit and try again
-          setTimeout(() => {
-            if (this.socket && this.socket.connected) {
-              console.log('Socket reconnected, retrying emit...');
-              this.socket.emit(event, data, callback);
-            } else {
-              console.error('Failed to reconnect socket');
-              if (callback) {
-                callback({ error: 'Socket not connected and reconnection failed' });
-              }
-            }
-          }, 1000);
-        } else {
-          console.error('No authentication token available for reconnection');
-          if (callback) {
-            callback({ error: 'No authentication token available' });
-          }
-        }
-      } else if (!this.socket) {
-        // No socket exists, try to create a new connection
-        console.log('No socket exists, attempting to create new connection...');
-        const token = localStorage.getItem('token');
-        if (token) {
-          this.connect(token);
-          setTimeout(() => {
-            if (this.socket && this.socket.connected) {
-              console.log('New socket connected, retrying emit...');
-              this.socket.emit(event, data, callback);
-            } else {
-              console.error('Failed to create new socket connection');
-              if (callback) {
-                callback({ error: 'Failed to establish socket connection' });
-              }
-            }
-          }, 2000);
-        } else {
-          console.error('No authentication token available');
-          if (callback) {
-            callback({ error: 'No authentication token available' });
-          }
-        }
-      } else {
-        if (callback) {
-          callback({ error: 'Socket not connected' });
-        }
+      console.log(`❌ Socket not connected, cannot emit: ${event}`, data);
+      if (callback) {
+        callback({ error: 'Socket not connected' });
       }
     }
   }
 
-  // Message-related methods
+  // Duplicate event prevention
+  isDuplicateEvent(event, data) {
+    const now = Date.now();
+    const key = `${event}_${JSON.stringify(data)}`;
+    const lastTime = this.recentEvents.get(key);
+
+    if (lastTime && now - lastTime < 500) {
+      return true;
+    }
+
+    this.recentEvents.set(key, now);
+
+    // Clean up old events
+    for (const [eventKey, time] of this.recentEvents.entries()) {
+      if (now - time > 3000) {
+        this.recentEvents.delete(eventKey);
+      }
+    }
+
+    return false;
+  }
+
+  // Message methods
   sendMessage(messageData, callback) {
     this.emit('message:send', messageData, callback);
-  }
-
-  startTyping(groupId) {
-    console.log('Socket: Emitting typing:start for group:', groupId);
-    this.emit('typing:start', { groupId });
-  }
-
-  stopTyping(groupId) {
-    console.log('Socket: Emitting typing:stop for group:', groupId);
-    this.emit('typing:stop', { groupId });
-  }
-
-  // Message interaction methods
-  reactToMessage(messageId, emoji, groupId) {
-    this.emit('message:react', { messageId, emoji, groupId });
   }
 
   editMessage(messageId, content, groupId) {
     this.emit('message:edit', { messageId, content, groupId });
   }
 
-  deleteMessage(messageId, groupId, reason = 'user') {
-    this.emit('message:delete', { messageId, groupId, reason });
+  deleteMessage(messageId) {
+    this.emit('message:delete', { messageId });
   }
 
-  markAsDelivered(messageId, groupId, messageIds = null) {
-    this.emit('message:delivered', { messageId, groupId, messageIds });
-  }
-
-  markAsSeen(messageId, groupId, messageIds = null) {
-    this.emit('message:seen', { messageId, groupId, messageIds });
-  }
-
+  // Group methods
   joinGroup(groupId) {
-    if (this.joinedGroups.has(groupId)) {
-      console.log('Already joined group:', groupId);
-      return;
-    }
-    
-    if (!this.socket || !this.socket.connected) {
-      console.warn('Socket not connected, cannot join group:', groupId);
-      return;
-    }
-    
-    console.log('Joining group via socket:', groupId);
     this.emit('group:join', { groupId });
-    this.joinedGroups.add(groupId);
   }
 
   leaveGroup(groupId) {
-    console.log('Leaving group via socket:', groupId);
     this.emit('group:leave', { groupId });
-    this.joinedGroups.delete(groupId);
   }
 
-  // Notification methods
-  onNotification(callback) {
-    this.on('notification:new', callback);
+  // Typing indicators
+  startTyping(groupId) {
+    this.emit('typing:start', { groupId });
   }
 
-  // Online status methods
-  onUserOnline(callback) {
-    this.on('user:online', callback);
+  stopTyping(groupId) {
+    this.emit('typing:stop', { groupId });
   }
 
-  onUserOffline(callback) {
-    this.on('user:offline', callback);
-  }
-
-  // Remove online status listeners
-  offUserOnline(callback) {
-    this.off('user:online', callback);
-  }
-
-  offUserOffline(callback) {
-    this.off('user:offline', callback);
-  }
-
-  // Global status change listener
-  onUserStatusChanged(callback) {
-    this.on('user:status:changed', callback);
-  }
-
-  offUserStatusChanged(callback) {
-    this.off('user:status:changed', callback);
-  }
-
-  // Typing indicator methods
-  onTypingStart(callback) {
-    this.on('typing:start', callback);
-  }
-
-  onTypingStop(callback) {
-    this.on('typing:stop', callback);
-  }
-
-  offTypingStart(callback) {
-    this.off('typing:start', callback);
-  }
-
-  offTypingStop(callback) {
-    this.off('typing:stop', callback);
-  }
-
-  // Get socket instance
+  // Utility methods
   getSocket() {
     return this.socket;
   }
 
-  // Check connection status
   isConnected() {
-    return this.socket && this.socket.connected;
+    return this.connected && this.socket?.connected;
   }
 
-  // Get connection status info
   getConnectionStatus() {
     return {
-      socketExists: !!this.socket,
-      connected: this.socket?.connected || false,
-      socketId: this.socket?.id || null,
-      transport: this.socket?.io?.engine?.transport?.name || null
+      connected: this.connected,
+      socketId: this.socket?.id,
+      transport: this.socket?.io?.engine?.transport?.name
     };
   }
 
-  // Manual reconnect with fresh token
   reconnect() {
     const token = localStorage.getItem('token');
-    if (!token) {
-      console.error('No token available for reconnection');
-      return false;
-    }
-    
-    console.log('Manually reconnecting socket with fresh token...');
-    this.disconnect();
-    return this.connect(token);
-  }
-
-  // Typing indicator methods
-  startTyping(groupId) {
-    if (this.socket && this.socket.connected) {
-      console.log('Socket: Emitting typing:start for group:', groupId);
-      this.emit('typing:start', { groupId });
-    } else {
-      console.warn('Socket not connected, cannot start typing indicator');
-    }
-  }
-
-  stopTyping(groupId) {
-    if (this.socket && this.socket.connected) {
-      console.log('Socket: Emitting typing:stop for group:', groupId);
-      this.emit('typing:stop', { groupId });
-    } else {
-      console.warn('Socket not connected, cannot stop typing indicator');
-    }
-  }
-
-  // Check if token exists and is not expired (basic check)
-  hasValidToken() {
-    const token = localStorage.getItem('token');
-    if (!token) return false;
-    
-    try {
-      // Basic JWT structure check - decode without verification
-      const parts = token.split('.');
-      if (parts.length !== 3) return false;
-      
-      const payload = JSON.parse(atob(parts[1]));
-      const now = Math.floor(Date.now() / 1000);
-      
-      // Check if token is expired
-      if (payload.exp && payload.exp < now) {
-        console.log('Token is expired');
-        return false;
-      }
-      
-      return true;
-    } catch (e) {
-      console.log('Invalid token format');
-      return false;
+    if (token) {
+      this.disconnect();
+      setTimeout(() => {
+        this.connect(token);
+      }, 1000);
     }
   }
 }
 
+// Create singleton instance
 const socketService = new SocketService();
+
 export default socketService;

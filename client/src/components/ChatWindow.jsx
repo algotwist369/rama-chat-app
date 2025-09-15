@@ -1,427 +1,291 @@
-import React, { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react';
-import toast from 'react-hot-toast';
-import ForwardMessageModal from './ForwardMessageModal';
+import React, { useState, useRef, useEffect } from 'react';
+import { Send, Paperclip, Smile } from 'lucide-react';
+import MessageItem from './MessageItem';
+import LoadingSpinner from './common/LoadingSpinner';
+import socketService from '../sockets/socket';
 
-// Custom hooks
-import {
-    useSocketListeners,
-    useTypingIndicator,
-    useFileUpload,
-    useScrollManagement,
-    useMessageSelection
-} from '../hooks';
-
-// Sub-components
-import ChatHeader from './ChatWindow/EnhancedChatHeader';
-import MessageSelectionBar from './ChatWindow/MessageSelectionBar';
-import MessagesList from './ChatWindow/MessagesList';
-import MessageInput from './ChatWindow/EnhancedMessageInput';
-
-const ChatWindow = ({
-    group,
-    messages,
-    currentUser,
-    editingMessage,
-    replyingMessage,
-    onSendMessage,
-    onEditMessage,
-    onDeleteMessage,
-    onDeleteMultipleMessages,
-    onSetEditingMessage,
-    onSetReplyingMessage,
-    onLoadMore,
-    loading,
-    loadingMore,
-    hasMoreMessages,
-    socketService,
-    availableGroups = [],
-    onReactToMessage,
-    onReplyToMessage,
-    onDeleteMessageSocket,
-    onEditMessageSocket,
-    messagePrivacy = null
+const ChatWindow = ({ 
+  group, 
+  messages, 
+  currentUser, 
+  onSendMessage, 
+  onEditMessage, 
+  onDeleteMessage, 
+  loading 
 }) => {
-    // Refs for performance optimization
-    const chatContainerRef = useRef(null);
-    const resizeObserverRef = useRef(null);
-    
-    // State
-    const [messageText, setMessageText] = useState('');
-    const [localEditingMessage, setLocalEditingMessage] = useState(null);
-    const [forwardingMessage, setForwardingMessage] = useState(null);
-    const [showForwardModal, setShowForwardModal] = useState(false);
-    const [multiSelectMode, setMultiSelectMode] = useState(false);
-    const [isVisible, setIsVisible] = useState(true);
+  const [messageText, setMessageText] = useState('');
+  const [editingMessage, setEditingMessage] = useState(null);
+  const [typingUsers, setTypingUsers] = useState([]);
+  const messagesEndRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const typingTimeoutRef = useRef(null);
+  const isTypingRef = useRef(false);
 
-    // Custom hooks
-    const {
-        onlineMembers,
-        onlineCount,
-        isRefreshingStatus,
-        localTypingUsers,
-        refreshMembers
-    } = useSocketListeners(group, socketService);
+  // Scroll to bottom when messages change
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
 
-    const { isTyping, handleInputChange: handleTypingChange, stopTyping } = useTypingIndicator(group, socketService);
-
-    // Handle input change for both message text and typing indicator
-    const handleInputChange = useCallback((e) => {
-        const value = e.target.value;
-        setMessageText(value);
-        handleTypingChange(value);
-    }, [handleTypingChange]);
-
-    const {
-        selectedFile,
-        uploadingFile,
-        uploadProgress,
-        dragActive,
-        fileInputRef,
-        getFileIcon,
-        formatFileSize,
-        handleDrag,
-        handleDrop,
-        handleFileSelect,
-        uploadFile,
-        removeSelectedFile
-    } = useFileUpload();
-
-    const {
-        showScrollButton,
-        newMessagesCount,
-        messagesEndRef,
-        messagesContainerRef,
-        handleScroll,
-        resetScroll,
-        forceResetScroll,
-        handleScrollToBottom
-    } = useScrollManagement(messages, currentUser, hasMoreMessages, loadingMore, onLoadMore);
-
-    const {
-        selectedMessages,
-        toggleMessageSelection,
-        clearSelection,
-        getSelectedCount,
-        getSelectedMessageIds
-    } = useMessageSelection();
-
-    // Filter typing users to exclude current user
-    const filteredTypingUsers = useMemo(() => {
-        return Array.from(localTypingUsers.entries()).filter(([userId, username]) =>
-            userId !== currentUser.id && userId !== currentUser._id &&
-            userId.toString() !== currentUser.id?.toString() &&
-            userId.toString() !== currentUser._id?.toString()
-        );
-    }, [localTypingUsers, currentUser.id, currentUser._id]);
-
-    // Performance optimization: Throttle resize handler
-    const handleResize = useCallback(
-        (() => {
-            let timeoutId;
-            return () => {
-                clearTimeout(timeoutId);
-                timeoutId = setTimeout(() => {
-                    // Handle responsive layout changes
-                    if (window.innerWidth < 768) {
-                        // Mobile optimizations
-                        setIsVisible(true);
-                    } else {
-                        // Desktop optimizations
-                        setIsVisible(true);
-                    }
-                }, 100);
-            };
-        })(),
-        []
-    );
-
-    // Setup resize observer for better performance
-    useEffect(() => {
-        if (typeof ResizeObserver !== 'undefined' && chatContainerRef.current) {
-            resizeObserverRef.current = new ResizeObserver(
-                (entries) => {
-                    entries.forEach((entry) => {
-                        // Optimize layout based on container size
-                        if (entry.contentRect.width < 768) {
-                            // Mobile optimizations
-                        } else if (entry.contentRect.width < 1024) {
-                            // Tablet optimizations
-                        } else {
-                            // Desktop optimizations
-                        }
-                    });
-                }
-            );
-            resizeObserverRef.current.observe(chatContainerRef.current);
+  // Typing indicator handlers
+  const handleTypingStart = (data) => {
+    if (data.userId !== currentUser.id && data.groupId === group._id) {
+      setTypingUsers(prev => {
+        const exists = prev.some(user => user.userId === data.userId);
+        if (!exists) {
+          return [...prev, { userId: data.userId, username: data.username }];
         }
+        return prev;
+      });
+    }
+  };
 
-        window.addEventListener('resize', handleResize);
-        return () => {
-            window.removeEventListener('resize', handleResize);
-            if (resizeObserverRef.current) {
-                resizeObserverRef.current.disconnect();
-            }
-        };
-    }, [handleResize]);
+  const handleTypingStop = (data) => {
+    if (data.userId !== currentUser.id && data.groupId === group._id) {
+      setTypingUsers(prev => prev.filter(user => user.userId !== data.userId));
+    }
+  };
 
-    // Set message text when editing
-    useEffect(() => {
-        if (editingMessage) {
-            setMessageText(editingMessage.content); // Use 'content' field instead of 'text'
-        }
-    }, [editingMessage]);
+  // Socket event listeners for typing indicators
+  useEffect(() => {
+    if (!group) return;
 
-    // Reset scroll when group changes (only when actually switching groups)
-    useEffect(() => {
-        if (messages.length > 0) {
-            console.log('ChatWindow: Group changed, resetting scroll', { groupId: group._id });
-            // Immediate scroll reset for group changes
-            forceResetScroll();
-        }
-    }, [group._id, forceResetScroll]);
+    socketService.on('typing:start', handleTypingStart);
+    socketService.on('typing:stop', handleTypingStop);
 
-    // Optimized message submission handler
-    const handleSubmit = useCallback(async (e) => {
-        e.preventDefault();
+    return () => {
+      socketService.off('typing:start', handleTypingStart);
+      socketService.off('typing:stop', handleTypingStop);
+    };
+  }, [group, currentUser.id]);
 
-        // If there's a selected file, upload it first
-        if (selectedFile && !uploadingFile) {
-            await uploadFile(group._id, onSendMessage);
-            return;
-        }
+  // Handle typing events
+  const handleTyping = () => {
+    if (!group || !socketService.isConnected()) return;
 
-        // Enhanced validation - ensure we have either text content or a file
-        const hasTextContent = messageText && messageText.trim().length > 0;
-        const hasFile = selectedFile && selectedFile.name;
-        
-        if (!hasTextContent && !hasFile) {
-            console.warn('Cannot send empty message');
-            return;
-        }
-
-        if (editingMessage || localEditingMessage) {
-            // Handle edit
-            const messageToEdit = editingMessage || localEditingMessage;
-            
-            // Validate edit content
-            if (!messageText || messageText.trim().length === 0) {
-                toast.error('Message cannot be empty');
-                return;
-            }
-            
-            if (messageText.trim().length > 1000) {
-                toast.error('Message cannot exceed 1000 characters');
-                return;
-            }
-            
-            try {
-                await onEditMessage(messageToEdit._id, messageText.trim());
-                setLocalEditingMessage(null);
-                onSetEditingMessage?.(null);
-                setMessageText('');
-                if (isTyping) {
-                    stopTyping();
-                }
-                toast.success('Message updated');
-            } catch (error) {
-                console.error('Edit message error:', error);
-                console.error('Error response:', error.response?.data);
-                const errorMessage = error.response?.data?.error || error.response?.data?.details || error.message || 'Failed to update message';
-                toast.error(typeof errorMessage === 'string' ? errorMessage : JSON.stringify(errorMessage));
-            }
-        } else {
-            // Handle new message
-            const messageData = {
-                content: hasTextContent ? messageText.trim() : '', // Use 'content' field instead of 'text'
-                groupId: group._id,
-                messageType: 'text', // Explicitly set message type
-                replyTo: replyingMessage?._id || null // Include replyTo if replying
-            };
-
-            // Final validation before sending
-            if (!messageData.content && !hasFile) {
-                console.warn('Cannot send message without content');
-                return;
-            }
-
-            // Pre-clear the message text for better UX
-            const originalText = messageText;
-            setMessageText('');
-            if (isTyping) {
-                stopTyping();
-            }
-
-            onSendMessage(messageData, (response) => {
-                console.log('Message send response:', response);
-                if (response && response.ok) {
-                    // Message sent successfully - clear reply state
-                    if (replyingMessage) {
-                        onSetReplyingMessage?.(null);
-                    }
-                    // Message sent successfully - scroll management will handle auto-scroll
-                    // No need to force scroll here as the hook will handle it
-                } else if (response && response.error) {
-                    // Restore message text if sending failed
-                    setMessageText(originalText);
-                    toast.error('Failed to send message: ' + response.error);
-                } else {
-                    // Restore message text if sending failed
-                    setMessageText(originalText);
-                    toast.error('Failed to send message');
-                }
-            });
-        }
-    }, [selectedFile, uploadingFile, uploadFile, group._id, onSendMessage, messageText, editingMessage, localEditingMessage, onEditMessage, onSetEditingMessage, isTyping, stopTyping, replyingMessage, onSetReplyingMessage]);
-
-    // Handle key down events
-    const handleKeyDown = useCallback((e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            handleSubmit(e);
-        }
-    }, [handleSubmit]);
-
-
-    // Handle delete selected messages
-    const handleDeleteSelected = useCallback(() => {
-        const messageIds = getSelectedMessageIds();
-        onDeleteMultipleMessages(messageIds);
-        clearSelection();
-    }, [getSelectedMessageIds, onDeleteMultipleMessages, clearSelection]);
-
-    // Handle forward message
-    const handleForwardMessage = useCallback((message) => {
-        setForwardingMessage(message);
-        setShowForwardModal(true);
-    }, []);
-
-
-    // Handle multi-select toggle
-    const handleToggleMultiSelect = useCallback(() => {
-        setMultiSelectMode(!multiSelectMode);
-        if (multiSelectMode) {
-            clearSelection();
-        }
-    }, [multiSelectMode, clearSelection]);
-
-
-    const handleForwardSuccess = useCallback(() => {
-        setForwardingMessage(null);
-        setShowForwardModal(false);
-    }, []);
-
-    const handleCloseForwardModal = useCallback(() => {
-        setForwardingMessage(null);
-        setShowForwardModal(false);
-    }, []);
-
-    // Debug logging for typing users
-    if (localTypingUsers.size > 0) {
-        console.log('ChatWindow - localTypingUsers:', Array.from(localTypingUsers.entries()));
-        console.log('ChatWindow - filteredTypingUsers:', filteredTypingUsers);
+    if (!isTypingRef.current) {
+      isTypingRef.current = true;
+      socketService.startTyping(group._id);
     }
 
-    return (
-        <div 
-            ref={chatContainerRef}
-            className="h-full flex flex-col bg-gradient-to-br from-white via-slate-50/30 to-blue-50/20 dark:from-slate-900 dark:via-slate-800 dark:to-slate-700 overflow-hidden min-h-0 transition-all duration-300"
-        >
-            {/* Header - Fixed height */}
-            <div className="flex-shrink-0 animate-in slide-in-from-top-2 duration-300">
-                <ChatHeader
-                    group={group}
-                    onlineCount={onlineCount}
-                    onlineMembers={onlineMembers}
-                    isRefreshingStatus={isRefreshingStatus}
-                    filteredTypingUsers={filteredTypingUsers}
-                    onRefreshMembers={refreshMembers}
-                    currentUser={currentUser}
-                    multiSelectMode={multiSelectMode}
-                    onToggleMultiSelect={handleToggleMultiSelect}
-                    messagePrivacy={messagePrivacy}
-                />
-            </div>
+    // Clear existing timeout
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
 
-            {/* Message Selection Bar - Fixed height */}
-            {getSelectedCount() > 0 && (
-                <div className="flex-shrink-0">
-                    <MessageSelectionBar
-                        selectedCount={getSelectedCount()}
-                        onDeleteSelected={handleDeleteSelected}
-                        onClearSelection={clearSelection}
-                    />
-                </div>
+    // Set timeout to stop typing
+    typingTimeoutRef.current = setTimeout(() => {
+      if (isTypingRef.current) {
+        isTypingRef.current = false;
+        socketService.stopTyping(group._id);
+      }
+    }, 1000);
+  };
+
+  // Cleanup typing timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+      if (isTypingRef.current && group) {
+        socketService.stopTyping(group._id);
+      }
+    };
+  }, [group]);
+
+  // Handle send message
+  const handleSendMessage = (e) => {
+    e.preventDefault();
+    
+    if (!messageText.trim() && !editingMessage) return;
+
+    // Stop typing indicator
+    if (isTypingRef.current && group) {
+      isTypingRef.current = false;
+      socketService.stopTyping(group._id);
+    }
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+
+    const messageData = {
+      content: messageText.trim(),
+      messageType: 'text'
+    };
+
+    if (editingMessage) {
+      onEditMessage(editingMessage._id, messageText.trim());
+      setEditingMessage(null);
+    } else {
+      onSendMessage(messageData);
+    }
+    
+    setMessageText('');
+  };
+
+  // Handle file upload
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // For now, just show file name - you can implement actual upload later
+    const messageData = {
+      content: `📎 ${file.name}`,
+      messageType: 'file',
+      file: {
+        name: file.name,
+        size: file.size,
+        type: file.type
+      }
+    };
+
+    onSendMessage(messageData);
+  };
+
+  // Handle edit message
+  const handleEditMessage = (message) => {
+    setEditingMessage(message);
+    setMessageText(message.content);
+  };
+
+  // Cancel edit
+  const cancelEdit = () => {
+    setEditingMessage(null);
+    setMessageText('');
+  };
+
+  return (
+    <div className="flex-1 flex flex-col bg-white dark:bg-gray-900 min-h-0 min-w-0 overflow-hidden">
+      {/* Messages Area */}
+      <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-4 min-h-0">
+        {loading ? (
+          <div className="flex justify-center items-center h-full">
+            <LoadingSpinner size="large" />
+          </div>
+        ) : messages.length === 0 ? (
+          <div className="flex justify-center items-center h-full">
+            <div className="text-center">
+              <h3 className="text-lg font-medium text-gray-500 dark:text-gray-400 mb-2">
+                No messages yet
+              </h3>
+              <p className="text-sm text-gray-400 dark:text-gray-500">
+                Start the conversation by sending a message
+              </p>
+            </div>
+          </div>
+        ) : (
+          messages
+            .filter(message => message && message._id && message.senderId) // Filter out invalid messages
+            .map((message) => (
+              <MessageItem
+                key={message._id}
+                message={message}
+                currentUser={currentUser}
+                onEdit={handleEditMessage}
+                onDelete={onDeleteMessage}
+              />
+            ))
+        )}
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* Message Input */}
+      <div className="border-t border-gray-200 dark:border-gray-700 p-4 flex-shrink-0 min-w-0">
+        {editingMessage && (
+          <div className="mb-3 p-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-yellow-800 dark:text-yellow-200">
+                Editing: {editingMessage.content.substring(0, 50)}...
+              </span>
+              <button
+                onClick={cancelEdit}
+                className="text-yellow-600 dark:text-yellow-400 hover:text-yellow-800 dark:hover:text-yellow-200"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Typing Indicator */}
+        {typingUsers.length > 0 && (
+          <div className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400 italic">
+            {typingUsers.length === 1 ? (
+              `${typingUsers[0].username} is typing...`
+            ) : typingUsers.length === 2 ? (
+              `${typingUsers[0].username} and ${typingUsers[1].username} are typing...`
+            ) : (
+              `${typingUsers[0].username} and ${typingUsers.length - 1} others are typing...`
             )}
-
-            {/* Messages Area - Flexible height */}
-            <div className="flex-1 min-h-0 relative">
-                <MessagesList
-                    messages={messages}
-                    currentUser={currentUser}
-                    loading={loading}
-                    loadingMore={loadingMore}
-                    hasMoreMessages={hasMoreMessages}
-                    onLoadMore={onLoadMore}
-                    selectedMessages={selectedMessages}
-                    onToggleMessageSelection={toggleMessageSelection}
-                    onDeleteMessage={onDeleteMessage}
-                    onSetEditingMessage={onSetEditingMessage}
-                    onForwardMessage={handleForwardMessage}
-                    availableGroups={availableGroups}
-                    filteredTypingUsers={filteredTypingUsers}
-                    showScrollButton={showScrollButton}
-                    newMessagesCount={newMessagesCount}
-                    onScrollToBottom={handleScrollToBottom}
-                    messagesContainerRef={messagesContainerRef}
-                    messagesEndRef={messagesEndRef}
-                    handleScroll={handleScroll}
-                    onReactToMessage={onReactToMessage}
-                    onReplyToMessage={onReplyToMessage}
-                    onDeleteMessageSocket={onDeleteMessageSocket}
-                    onEditMessageSocket={onEditMessageSocket}
-                    multiSelectMode={multiSelectMode}
-                />
-            </div>
-
-            {/* Input Area - Fixed height */}
-            <div className="flex-shrink-0 chat-input-container bg-white dark:bg-slate-800">
-                <MessageInput
-                    group={group}
-                    messageText={messageText}
-                    setMessageText={setMessageText}
-                    editingMessage={editingMessage}
-                    localEditingMessage={localEditingMessage}
-                    replyingMessage={replyingMessage}
-                    onSetEditingMessage={onSetEditingMessage}
-                    onSetReplyingMessage={onSetReplyingMessage}
-                    selectedFile={selectedFile}
-                    uploadingFile={uploadingFile}
-                    uploadProgress={uploadProgress}
-                    dragActive={dragActive}
-                    fileInputRef={fileInputRef}
-                    getFileIcon={getFileIcon}
-                    formatFileSize={formatFileSize}
-                    handleDrag={handleDrag}
-                    handleDrop={handleDrop}
-                    handleFileSelect={handleFileSelect}
-                    removeSelectedFile={removeSelectedFile}
-                    handleInputChange={handleInputChange}
-                    handleSubmit={handleSubmit}
-                    handleKeyDown={handleKeyDown}
-                />
-            </div>
-
-            {/* Forward Message Modal */}
-            <ForwardMessageModal
-                isOpen={showForwardModal}
-                onClose={handleCloseForwardModal}
-                message={forwardingMessage}
-                availableGroups={availableGroups.filter(g => g._id !== group._id)}
-                onSuccess={handleForwardSuccess}
+          </div>
+        )}
+        
+        <form onSubmit={handleSendMessage} className="flex items-end space-x-2 min-w-0">
+          <div className="flex-1 min-w-0">
+            <textarea
+              value={messageText}
+              onChange={(e) => {
+                setMessageText(e.target.value);
+                handleTyping();
+              }}
+              placeholder={editingMessage ? "Edit your message..." : "Type a message..."}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-800 dark:text-white resize-none min-h-[40px] max-h-32"
+              rows={1}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSendMessage(e);
+                }
+              }}
+              onInput={(e) => {
+                // Auto-resize textarea
+                e.target.style.height = 'auto';
+                e.target.style.height = Math.min(e.target.scrollHeight, 128) + 'px';
+              }}
             />
-        </div>
-    );
+          </div>
+          
+          <div className="flex items-center space-x-1 flex-shrink-0">
+            {/* File Upload */}
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              title="Attach file"
+            >
+              <Paperclip className="h-5 w-5" />
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              onChange={handleFileUpload}
+              className="hidden"
+              accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt"
+            />
+
+            {/* Emoji Button */}
+            <button
+              type="button"
+              className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              title="Add emoji"
+            >
+              <Smile className="h-5 w-5" />
+            </button>
+
+            {/* Send Button */}
+            <button
+              type="submit"
+              disabled={!messageText.trim() && !editingMessage}
+              className="p-2 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+              title="Send message"
+            >
+              <Send className="h-5 w-5" />
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
 };
 
-// Memoize the ChatWindow component to prevent unnecessary re-renders
-export default memo(ChatWindow);
+export default ChatWindow;

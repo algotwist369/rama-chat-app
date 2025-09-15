@@ -24,11 +24,24 @@ function initSocket(server, redisAdapter, app) {
     },
     transports: process.env.SOCKET_TRANSPORTS 
       ? process.env.SOCKET_TRANSPORTS.split(',').map(transport => transport.trim())
-      : ['polling', 'websocket'],
+      : ['websocket', 'polling'], // Prefer websocket for better performance
     allowEIO3: process.env.SOCKET_ALLOW_EIO3 === 'true' || true,
     pingTimeout: parseInt(process.env.SOCKET_PING_TIMEOUT) || 60000,
     pingInterval: parseInt(process.env.SOCKET_PING_INTERVAL) || 25000,
-    maxHttpBufferSize: parseInt(process.env.SOCKET_MAX_HTTP_BUFFER_SIZE) || 1000000
+    maxHttpBufferSize: parseInt(process.env.SOCKET_MAX_HTTP_BUFFER_SIZE) || 1000000,
+    // Performance optimizations
+    compression: true,
+    serveClient: false,
+    allowUpgrades: true,
+    upgradeTimeout: 10000,
+    // Better error handling
+    connectTimeout: 45000,
+    // Optimize for real-time messaging
+    perMessageDeflate: {
+      threshold: 1024,
+      concurrencyLimit: 10,
+      memLevel: 7
+    }
   });
   if (redisAdapter) {
     const pubClient = redisAdapter;
@@ -59,7 +72,7 @@ function initSocket(server, redisAdapter, app) {
 
     if (!token) {
       console.log('Socket authentication failed: No token provided');
-      return next(new Error('unauth'));
+      return next(new Error('Authentication required'));
     }
 
     try {
@@ -70,10 +83,11 @@ function initSocket(server, redisAdapter, app) {
         socketId: socket.id
       });
       socket.userId = payload.sub;
+      socket.userRole = payload.role;
       next();
     } catch (e) {
       console.log('Socket authentication failed: Token verification error:', e.message);
-      next(new Error('unauth'));
+      next(new Error('Invalid or expired token'));
     }
   });
 
@@ -176,9 +190,22 @@ function initSocket(server, redisAdapter, app) {
 
     // Handle group joining/leaving
     socket.on('group:join', async ({ groupId }) => {
-      console.log(`User ${user.username} (${socket.userId}) joining group: ${groupId}`);
+      console.log(`🔗 User ${user.username} (${socket.userId}) joining group: ${groupId}`);
+      
+      // Leave all other groups first to ensure proper isolation
+      const currentRooms = Array.from(socket.rooms);
+      console.log(`Current rooms before join:`, currentRooms);
+      
+      currentRooms.forEach(room => {
+        if (room.startsWith('group:') && room !== `group:${groupId}`) {
+          console.log(`Leaving room: ${room}`);
+          socket.leave(room);
+        }
+      });
+      
       socket.join(`group:${groupId}`);
-      console.log(`Socket joined room: group:${groupId}`);
+      console.log(`✅ User joined room: group:${groupId}`);
+      console.log(`Current rooms after join:`, Array.from(socket.rooms));
 
       // Emit user joined event to group members (excluding the user who joined)
       socket.to(`group:${groupId}`).emit('user:joined', {
@@ -210,7 +237,10 @@ function initSocket(server, redisAdapter, app) {
     });
 
     socket.on('group:leave', async ({ groupId }) => {
+      console.log(`User ${user.username} (${socket.userId}) leaving group: ${groupId}`);
       socket.leave(`group:${groupId}`);
+      console.log(`Socket left room: group:${groupId}`);
+      
       socket.to(`group:${groupId}`).emit('user:left', {
         userId: socket.userId,
         username: user.username
@@ -240,7 +270,7 @@ function initSocket(server, redisAdapter, app) {
     });
 
     socket.on('message:send', async (payload, ack) => {
-      const { content, file, groupId, targetGroups, replyTo } = payload; // Use 'content' instead of 'text'
+      const { content, file, groupId, targetGroups, replyTo } = payload;
       
       // Debug logging
       console.log('Socket: Received message payload:', {
@@ -250,13 +280,31 @@ function initSocket(server, redisAdapter, app) {
         groupId: groupId
       });
       
-      // Validate message content
+      // Validate message content - allow empty content if file is present
       const hasValidContent = content && content.trim().length > 0;
       const hasFile = file && file.url;
       
       if (!hasValidContent && !hasFile) {
         console.log('Socket: Rejecting empty message');
-        if (ack) ack({ error: 'Message content is required' });
+        if (ack) ack({ error: 'Message content or file is required' });
+        return;
+      }
+
+      // Validate group membership
+      const group = await Group.findById(groupId);
+      if (!group) {
+        console.log('Socket: Group not found');
+        if (ack) ack({ error: 'Group not found' });
+        return;
+      }
+
+      const isMember = group.users.some(id => id.toString() === socket.userId.toString()) ||
+                      group.managers.some(id => id.toString() === socket.userId.toString()) ||
+                      group.createdBy.toString() === socket.userId.toString();
+
+      if (!isMember) {
+        console.log('Socket: User not member of group');
+        if (ack) ack({ error: 'Not authorized to send messages to this group' });
         return;
       }
       
@@ -279,9 +327,9 @@ function initSocket(server, redisAdapter, app) {
       const msg = await Message.create({
         senderId: user._id,
         groupId: targetGroupId,
-        content: content, // Use 'content' field instead of 'text'
-        messageType: hasFile ? (file.type?.startsWith('image/') ? 'image' : 'file') : 'text', // Set correct message type
-        file: hasFile ? file : null, // Only set file if it exists
+        content: hasValidContent ? content.trim() : '', // Only set content if valid
+        messageType: hasFile ? (file.type?.startsWith('image/') ? 'image' : 'file') : 'text',
+        file: hasFile ? file : null,
         tags,
         replyTo: replyTo || null,
         forwardedToGroups: forwardedGroups.map(g => g._id)
@@ -293,10 +341,21 @@ function initSocket(server, redisAdapter, app) {
         .populate('groupId', 'name region')
         .lean();
 
-      // Emit to the target group with better error handling
+      // Emit to the target group
       try {
+        // Get the list of sockets in the room to debug
+        const roomSockets = await io.in(`group:${targetGroupId}`).fetchSockets();
+        console.log(`📤 Broadcasting message to group:${targetGroupId}`, {
+          messageId: msg._id,
+          senderId: user._id,
+          content: populatedMsg.content,
+          groupId: targetGroupId,
+          roomSize: roomSockets.length,
+          roomSockets: roomSockets.map(s => ({ id: s.id, userId: s.userId }))
+        });
+        
         io.to(`group:${targetGroupId}`).emit('message:new', populatedMsg);
-        console.log(`📤 Message broadcasted to group: ${targetGroupId}, messageId: ${msg._id}`);
+        console.log(`✅ Message broadcasted successfully to group:${targetGroupId} (${roomSockets.length} sockets)`);
       } catch (error) {
         console.error('Error broadcasting message to group:', error);
       }
@@ -307,9 +366,9 @@ function initSocket(server, redisAdapter, app) {
         const forwardedMsg = await Message.create({
           senderId: user._id,
           groupId: group._id,
-          content: content, // Use 'content' field instead of 'text'
-          messageType: hasFile ? (file.type?.startsWith('image/') ? 'image' : 'file') : 'text', // Set correct message type
-          file: hasFile ? file : null, // Only set file if it exists
+          content: hasValidContent ? content.trim() : '',
+          messageType: hasFile ? (file.type?.startsWith('image/') ? 'image' : 'file') : 'text',
+          file: hasFile ? file : null,
           tags,
           forwardedFrom: msg._id,
           forwardedToGroups: forwardedGroups.map(g => g._id)
@@ -323,35 +382,37 @@ function initSocket(server, redisAdapter, app) {
 
         forwardedMessages.push(populatedForwardedMsg);
 
-        // Emit to the forwarded group with better error handling
+        // Emit to the forwarded group with better error handling and performance monitoring
         try {
+          const startTime = Date.now();
           io.to(`group:${group._id}`).emit('message:new', {
             ...populatedForwardedMsg,
             isForwarded: true,
             originalGroup: { _id: targetGroupId, name: populatedMsg.groupId.name }
           });
-          console.log(`📤 Forwarded message broadcasted to group: ${group._id}, messageId: ${forwardedMsg._id}`);
+          const endTime = Date.now();
+          console.log(`📤 Forwarded message broadcasted to group: ${group._id}, messageId: ${forwardedMsg._id}, latency: ${endTime - startTime}ms`);
         } catch (error) {
           console.error('Error broadcasting forwarded message to group:', error);
         }
       }
 
       // Send notifications for new messages (optimized for large groups)
-      const group = await Group.findById(targetGroupId).populate('users managers');
-      if (group) {
+      const targetGroup = await Group.findById(targetGroupId).populate('users managers');
+      if (targetGroup) {
         const notification = {
           type: 'message',
           title: `New message from ${user.username}`,
-          message: content || 'Sent a file', // Use 'content' instead of 'text'
+          message: hasValidContent ? content : 'Sent a file',
           groupId: targetGroupId,
-          groupName: group.name,
+          groupName: targetGroup.name,
           senderId: user._id,
           senderUsername: user.username,
           createdAt: new Date()
         };
 
         // Optimize notification sending for large groups
-        const allMembers = [...(group.users || []), ...(group.managers || [])];
+        const allMembers = [...(targetGroup.users || []), ...(targetGroup.managers || [])];
         const notificationPromises = [];
         
         // Batch process notifications for better performance
@@ -390,7 +451,7 @@ function initSocket(server, redisAdapter, app) {
           const forwardedNotification = {
             type: 'message',
             title: `New message from ${user.username} (from ${group.name})`,
-            message: content || 'Sent a file', // Use 'content' instead of 'text'
+            message: hasValidContent ? content : 'Sent a file',
             groupId: forwardedGroup._id,
             groupName: forwardedGroup.name,
             senderId: user._id,
@@ -416,13 +477,16 @@ function initSocket(server, redisAdapter, app) {
       }
 
       // Send acknowledgment back to sender with enhanced data
-      ack?.({
-        ok: true,
-        id: msg._id,
-        message: populatedMsg,
-        forwardedTo: forwardedMessages.length,
-        timestamp: new Date().toISOString()
-      });
+      if (ack) {
+        ack({
+          ok: true,
+          id: msg._id,
+          message: populatedMsg,
+          forwardedTo: forwardedMessages.length,
+          timestamp: new Date().toISOString()
+        });
+        console.log(`✅ Acknowledgment sent to sender for message: ${msg._id}`);
+      }
       
       console.log(`✅ Message sent successfully - Group: ${targetGroupId}, Forwarded to: ${forwardedMessages.length} groups`);
     });
@@ -430,9 +494,31 @@ function initSocket(server, redisAdapter, app) {
     // Handle message reactions
     socket.on('message:react', async ({ messageId, emoji, groupId }) => {
       try {
+        // Validate input
+        if (!messageId || !emoji || !groupId) {
+          socket.emit('error', { message: 'Missing required fields for reaction' });
+          return;
+        }
+
         const message = await Message.findById(messageId);
         if (!message || message.groupId.toString() !== groupId) {
           socket.emit('error', { message: 'Message not found' });
+          return;
+        }
+
+        // Validate group membership
+        const group = await Group.findById(groupId);
+        if (!group) {
+          socket.emit('error', { message: 'Group not found' });
+          return;
+        }
+
+        const isMember = group.users.some(id => id.toString() === socket.userId.toString()) ||
+                        group.managers.some(id => id.toString() === socket.userId.toString()) ||
+                        group.createdBy.toString() === socket.userId.toString();
+
+        if (!isMember) {
+          socket.emit('error', { message: 'Not authorized to react to messages in this group' });
           return;
         }
 
@@ -477,6 +563,12 @@ function initSocket(server, redisAdapter, app) {
     // Handle message editing
     socket.on('message:edit', async ({ messageId, content, groupId }) => {
       try {
+        // Validate input
+        if (!messageId || !content || !groupId) {
+          socket.emit('error', { message: 'Missing required fields for message edit' });
+          return;
+        }
+
         const message = await Message.findById(messageId);
         if (!message || message.groupId.toString() !== groupId) {
           socket.emit('error', { message: 'Message not found' });
@@ -494,7 +586,14 @@ function initSocket(server, redisAdapter, app) {
           return;
         }
 
-        message.content = content;
+        // Validate content
+        if (!content.trim()) {
+          socket.emit('error', { message: 'Message content cannot be empty' });
+          return;
+        }
+
+        // Update message
+        message.content = content.trim();
         message.tags = extractTags(content);
         message.edited = { 
           isEdited: true, 
@@ -504,11 +603,16 @@ function initSocket(server, redisAdapter, app) {
 
         await message.save();
 
-        // Emit edit update to all group members
+        // Populate the updated message for real-time broadcast
+        const populatedMessage = await Message.findById(messageId)
+          .populate('senderId', 'username email')
+          .populate('groupId', 'name region')
+          .lean();
+
+        // Emit edit update to all group members with full message data
         io.to(`group:${groupId}`).emit('message:edited', {
           messageId,
-          content,
-          edited: message.edited,
+          message: populatedMessage,
           timestamp: new Date()
         });
 
@@ -681,7 +785,7 @@ function initSocket(server, redisAdapter, app) {
 
     // typing indicator - only emit to the specific group
     socket.on('typing:start', ({ groupId }) => {
-      console.log(`User ${user.username} started typing in group: ${groupId}`);
+      console.log(`⌨️ User ${user.username} (${socket.userId}) started typing in group: ${groupId}`);
       // Verify user is actually in this group before showing typing indicator
       socket.to(`group:${groupId}`).emit('typing:start', {
         userId: socket.userId,
@@ -690,7 +794,7 @@ function initSocket(server, redisAdapter, app) {
       });
     });
     socket.on('typing:stop', ({ groupId }) => {
-      console.log(`User ${user.username} stopped typing in group: ${groupId}`);
+      console.log(`⌨️ User ${user.username} (${socket.userId}) stopped typing in group: ${groupId}`);
       // Verify user is actually in this group before stopping typing indicator
       socket.to(`group:${groupId}`).emit('typing:stop', {
         userId: socket.userId,

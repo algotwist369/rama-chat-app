@@ -1,11 +1,13 @@
  
 
+// Load environment configuration first
+const envConfig = require('./config/environment');
+
 const http = require('http');
 const app = require('./app');
 const connectDB = require('./config/db');
 const initSocket = require('./sockets/chatSocket');
 const { connectRedis, disconnectRedis } = require('./config/redis');
-const envConfig = require('./config/environment');
 const { createIndexes } = require('./config/databaseIndexes');
 
 const server = http.createServer(app);

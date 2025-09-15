@@ -1,92 +1,48 @@
-export const formatMessageDate = (dateString) => {
-  const date = new Date(dateString);
+// Simple date formatting utility
+export const formatDate = (date) => {
+  if (!date) return '';
+  
   const now = new Date();
-  const diffInMs = now - date;
-  const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
+  const messageDate = new Date(date);
+  const diffInMs = now - messageDate;
+  const diffInHours = diffInMs / (1000 * 60 * 60);
+  const diffInDays = diffInHours / 24;
 
-  if (diffInDays === 0) {
-    return 'Today';
-  } else if (diffInDays === 1) {
-    return 'Yesterday';
-  } else if (diffInDays < 7) {
-    return date.toLocaleDateString('en-US', { weekday: 'long' });
-  } else {
-    return date.toLocaleDateString('en-US', { 
-      month: 'short', 
-      day: 'numeric',
-      year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
-    });
+  // Less than 1 hour
+  if (diffInHours < 1) {
+    const minutes = Math.floor(diffInMs / (1000 * 60));
+    return minutes < 1 ? 'Just now' : `${minutes}m ago`;
   }
+
+  // Less than 24 hours
+  if (diffInHours < 24) {
+    return `${Math.floor(diffInHours)}h ago`;
+  }
+
+  // Less than 7 days
+  if (diffInDays < 7) {
+    return `${Math.floor(diffInDays)}d ago`;
+  }
+
+  // More than 7 days - show full date
+  return messageDate.toLocaleDateString();
 };
 
-export const formatMessageTime = (dateString) => {
-  const date = new Date(dateString);
-  return date.toLocaleTimeString('en-US', { 
-    hour: 'numeric', 
-    minute: '2-digit',
-    hour12: true 
+export const formatTime = (date) => {
+  if (!date) return '';
+  return new Date(date).toLocaleTimeString([], { 
+    hour: '2-digit', 
+    minute: '2-digit' 
   });
 };
 
-export const formatLastSeen = (dateString) => {
-  if (!dateString) return 'Never';
-  
-  const date = new Date(dateString);
-  const now = new Date();
-  const diffInMs = now - date;
-  const diffInMinutes = Math.floor(diffInMs / (1000 * 60));
-  const diffInHours = Math.floor(diffInMs / (1000 * 60 * 60));
-  const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
-
-  if (diffInMinutes < 1) {
-    return 'Just now';
-  } else if (diffInMinutes < 60) {
-    return `${diffInMinutes}m ago`;
-  } else if (diffInHours < 24) {
-    return `${diffInHours}h ago`;
-  } else if (diffInDays < 7) {
-    return `${diffInDays}d ago`;
-  } else {
-    return date.toLocaleDateString('en-US', { 
-      month: 'short', 
-      day: 'numeric' 
-    });
-  }
-};
-
-export const getDateGroupLabel = (dateString) => {
-  const date = new Date(dateString);
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-  
-  const messageDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  
-  if (messageDate.getTime() === today.getTime()) {
-    return 'Today';
-  } else if (messageDate.getTime() === yesterday.getTime()) {
-    return 'Yesterday';
-  } else {
-    return date.toLocaleDateString('en-US', { 
-      weekday: 'long',
-      month: 'long', 
-      day: 'numeric',
-      year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
-    });
-  }
-};
-
-export const groupMessagesByDate = (messages) => {
-  const grouped = {};
-  
-  messages.forEach(message => {
-    const dateLabel = getDateGroupLabel(message.createdAt);
-    if (!grouped[dateLabel]) {
-      grouped[dateLabel] = [];
-    }
-    grouped[dateLabel].push(message);
+export const formatFullDate = (date) => {
+  if (!date) return '';
+  return new Date(date).toLocaleDateString([], {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
   });
-  
-  return grouped;
 };

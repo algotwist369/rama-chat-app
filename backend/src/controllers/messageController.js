@@ -154,10 +154,15 @@ const sendMessage = asyncHandler(async (req, res) => {
         .populate('groupId', 'name region')
         .lean();
 
-    // Emit to the group via socket
+    // Emit to the group via socket with error handling
     const io = req.app.get('io');
     if (io) {
-        io.to(`group:${groupId}`).emit('message:new', populatedMessage);
+        try {
+            io.to(`group:${groupId}`).emit('message:new', populatedMessage);
+            console.log(`📤 Message broadcasted to group: ${groupId}, messageId: ${message._id}`);
+        } catch (error) {
+            console.error('Error broadcasting message to group:', error);
+        }
     }
 
     logger.business('Message sent', {
@@ -228,10 +233,11 @@ const getMessages = asyncHandler(async (req, res) => {
         // Message privacy feature: New users can only see messages sent after they joined the group
         // Admins can see all messages regardless of join date
         // Regular users only see messages created after their groupJoinedAt timestamp
-        if (!isAdmin && userJoinedAt) {
+        // But if userJoinedAt is null or very old, show all messages (for existing users)
+        if (!isAdmin && userJoinedAt && (Date.now() - userJoinedAt.getTime()) < (7 * 24 * 60 * 60 * 1000)) {
+            // Only apply privacy restriction for users who joined within the last 7 days
             baseQuery.createdAt = { $gte: userJoinedAt };
         }
-        // Remove the 30-day restriction for existing members - they should see all group messages
         
         // Cursor-based pagination
         if (before) {
@@ -438,7 +444,7 @@ const getMessages = asyncHandler(async (req, res) => {
                 messagesFound: messages.length,
                 firstMessage: messages[0] ? {
                     _id: messages[0]._id,
-                    text: messages[0].text,
+                    content: messages[0].content,
                     createdAt: messages[0].createdAt
                 } : null
             });
@@ -475,11 +481,11 @@ const getMessages = asyncHandler(async (req, res) => {
                 isEstimated: totalCount === estimatedCount && estimatedCount >= 10000
             },
             privacy: {
-                messagePrivacyEnabled: !isAdmin && userJoinedAt ? true : false,
+                messagePrivacyEnabled: !isAdmin && userJoinedAt && (Date.now() - userJoinedAt.getTime()) < (7 * 24 * 60 * 60 * 1000),
                 userJoinedAt: userJoinedAt,
                 isAdmin: isAdmin,
-                note: !isAdmin && userJoinedAt ? 
-                    'You can only see messages sent after you joined this group' : 
+                note: !isAdmin && userJoinedAt && (Date.now() - userJoinedAt.getTime()) < (7 * 24 * 60 * 60 * 1000) ? 
+                    'You can only see messages sent after you joined this group (new members have limited message history)' : 
                     'You can see all messages in this group'
             }
         };
@@ -559,7 +565,20 @@ const editMessage = asyncHandler(async (req, res) => {
         .populate('groupId', 'name region')
         .lean();
 
-    req.app.get('io')?.to(`group:${message.groupId}`).emit('message:edited', populatedMessage);
+    // Emit edit update to all group members with error handling
+    const io = req.app.get('io');
+    if (io) {
+        try {
+            io.to(`group:${message.groupId}`).emit('message:edited', {
+                messageId: message._id,
+                message: populatedMessage,
+                timestamp: new Date()
+            });
+            console.log(`✏️ Message edit broadcasted to group: ${message.groupId}, messageId: ${message._id}`);
+        } catch (error) {
+            console.error('Error broadcasting message edit to group:', error);
+        }
+    }
 
     logger.business('Message edited', {
         messageId: message._id,
@@ -849,7 +868,7 @@ const testGetMessages = asyncHandler(async (req, res) => {
         messagesFound: messages.length,
         messages: messages.map(m => ({
             _id: m._id,
-            text: m.text,
+            content: m.content,
             senderId: m.senderId,
             createdAt: m.createdAt
         }))

@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@socket.io/redis-adapter": "^8.3.0",
+    "axios": "^1.12.1",
     "bcryptjs": "^2.4.3",
     "compression": "^1.8.1",
     "cors": "^2.8.5",
@@ -38,6 +39,7 @@
     "multer": "^1.4.5-lts.1",
     "redis": "^5.8.2",
     "socket.io": "^4.7.2",
+    "socket.io-client": "^4.8.1",
     "winston": "^3.17.0",
     "winston-daily-rotate-file": "^5.0.0",
     "xss": "^1.0.15"
