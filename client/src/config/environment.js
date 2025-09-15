@@ -14,6 +14,16 @@ class FrontendEnvironmentConfig {
         this.isDevelopment = this.env === 'development';
         this.isLocal = this.detectLocalEnvironment();
         
+        // Debug environment detection
+        console.log('🌍 Environment Detection:', {
+            env: this.env,
+            isProduction: this.isProduction,
+            isDevelopment: this.isDevelopment,
+            isLocal: this.isLocal,
+            importMetaEnv: typeof import.meta !== 'undefined' ? import.meta.env : 'undefined',
+            processEnv: typeof process !== 'undefined' ? process.env.NODE_ENV : 'undefined'
+        });
+        
         this.loadConfig();
     }
 
@@ -33,6 +43,11 @@ class FrontendEnvironmentConfig {
             // Check Vite environment if available
             typeof import.meta !== 'undefined' && import.meta.env?.DEV === true
         ];
+
+        // If we're in production mode, don't consider it local
+        if (this.isProduction) {
+            return false;
+        }
 
         return localIndicators.some(indicator => indicator);
     }
