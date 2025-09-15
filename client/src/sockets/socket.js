@@ -151,10 +151,12 @@ class SocketService {
 
   // Group methods
   joinGroup(groupId) {
+    console.log('Socket: Joining group:', groupId);
     this.emit('group:join', { groupId });
   }
 
   leaveGroup(groupId) {
+    console.log('Socket: Leaving group:', groupId);
     this.emit('group:leave', { groupId });
   }
 
@@ -165,6 +167,23 @@ class SocketService {
 
   stopTyping(groupId) {
     this.emit('typing:stop', { groupId });
+  }
+
+  // Message seen status
+  markMessageSeen(messageId, groupId) {
+    this.emit('message:seen', { messageId, groupId });
+  }
+
+  markMessagesSeen(messageIds, groupId) {
+    this.emit('message:seen', { messageIds, groupId });
+  }
+
+  markMessageDelivered(messageId, groupId) {
+    this.emit('message:delivered', { messageId, groupId });
+  }
+
+  markMessagesDelivered(messageIds, groupId) {
+    this.emit('message:delivered', { messageIds, groupId });
   }
 
   // Utility methods

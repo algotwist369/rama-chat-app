@@ -12,9 +12,10 @@ import SocketDebugger from '../components/SocketDebugger';
 import NotificationPanel from '../components/NotificationPanel';
 import DebugPanel from '../components/DebugPanel';
 import EmojiPickerTest from '../components/EmojiPickerTest';
+import Settings from '../components/Settings';
 
 // Icons
-import { Bell, Wifi, WifiOff } from 'lucide-react';
+import { Bell, Wifi, WifiOff, Settings as SettingsIcon } from 'lucide-react';
 
 const Dashboard = () => {
   // Auth
@@ -24,6 +25,7 @@ const Dashboard = () => {
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [groups, setGroups] = useState([]);
   const [messages, setMessages] = useState([]);
+  const [groupMembers, setGroupMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [socketConnected, setSocketConnected] = useState(false);
   const [showNotificationPanel, setShowNotificationPanel] = useState(false);
@@ -31,6 +33,7 @@ const Dashboard = () => {
   const [showSocketDebugger, setShowSocketDebugger] = useState(false);
   const [showDebugPanel, setShowDebugPanel] = useState(false);
   const [showEmojiTest, setShowEmojiTest] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   // Refs
   const messagesEndRef = useRef(null);
@@ -38,6 +41,7 @@ const Dashboard = () => {
   const selectedGroupRef = useRef(selectedGroup);
   const groupsRef = useRef(groups);
   const setMessagesRef = useRef(setMessages);
+  const previousGroupRef = useRef(null);
 
   // Scroll to bottom
   const scrollToBottom = useCallback(() => {
@@ -77,13 +81,32 @@ const Dashboard = () => {
     }
   }, [selectedGroup]);
 
+  // Load group members
+  const loadGroupMembers = useCallback(async (groupId) => {
+    if (!groupId) return;
+    
+    try {
+      const response = await groupApi.getGroupMembers(groupId);
+      // Combine users and managers into a single array
+      const allMembers = [
+        ...(response.users || []),
+        ...(response.managers || [])
+      ];
+      setGroupMembers(allMembers);
+    } catch (error) {
+      console.error('Failed to load group members:', error);
+      // Don't show error toast for this as it's not critical
+    }
+  }, []);
+
   // Load messages for selected group
   const loadMessages = useCallback(async (groupId) => {
     if (!groupId) return;
     
     try {
       setLoading(true);
-      const response = await messageApi.getMessages(groupId);
+      // Include metadata to get seenBy and deliveredTo data
+      const response = await messageApi.getMessages(groupId, { includeMetadata: true });
       const newMessages = response.messages || [];
       
       setMessages(newMessages);
@@ -211,6 +234,43 @@ const Dashboard = () => {
           ? { ...msg, reactions: reactions }
           : msg
       )
+    );
+  }, []);
+
+  // Handle message seen status
+  const handleMessageSeen = useCallback(({ messageId, seenBy, userId }) => {
+    const currentSetMessages = setMessagesRef.current;
+    currentSetMessages(prev =>
+      prev.map(msg => 
+        msg._id === messageId 
+          ? { ...msg, seenBy: seenBy }
+          : msg
+      )
+    );
+  }, []);
+
+  // Handle bulk messages seen
+  const handleMessagesSeen = useCallback(({ messageIds, userId }) => {
+    console.log('Handling bulk messages seen:', { messageIds, userId });
+    const currentSetMessages = setMessagesRef.current;
+    currentSetMessages(prev =>
+      prev.map(msg => {
+        if (messageIds.includes(msg._id)) {
+          // Add user to seenBy if not already present
+          const alreadySeen = msg.seenBy?.some(s => s.user === userId);
+          if (!alreadySeen) {
+            console.log('Adding seen status to message:', msg._id, 'for user:', userId);
+            return {
+              ...msg,
+              seenBy: [
+                ...(msg.seenBy || []),
+                { user: userId, seenAt: new Date() }
+              ]
+            };
+          }
+        }
+        return msg;
+      })
     );
   }, []);
 
@@ -382,6 +442,32 @@ const Dashboard = () => {
     setReplyToMessage(message);
   }, []);
 
+  // Handle user profile update
+  const handleUserUpdate = useCallback((updatedUser) => {
+    // Update the user context or local state
+    console.log('User profile updated:', updatedUser);
+    toast.success('Profile updated successfully');
+  }, []);
+
+  // Handle group leave
+  const handleGroupLeave = useCallback((groupId) => {
+    console.log('User left group:', groupId);
+    // Remove the group from the groups list
+    setGroups(prev => prev.filter(group => group._id !== groupId));
+    
+    // If the left group was selected, select the first available group
+    if (selectedGroup?._id === groupId) {
+      const remainingGroups = groups.filter(group => group._id !== groupId);
+      if (remainingGroups.length > 0) {
+        setSelectedGroup(remainingGroups[0]);
+      } else {
+        setSelectedGroup(null);
+      }
+    }
+    
+    toast.success('Left group successfully');
+  }, [selectedGroup, groups]);
+
   // State for reply functionality
   const [replyToMessage, setReplyToMessage] = useState(null);
 
@@ -427,6 +513,8 @@ const Dashboard = () => {
     socketService.on('message:edited', handleMessageEdited);
     socketService.on('message:deleted', handleMessageDeleted);
     socketService.on('message:reaction', handleMessageReaction);
+    socketService.on('message:seen', handleMessageSeen);
+    socketService.on('messages:seen', handleMessagesSeen);
     socketService.on('notification:new', handleNotification);
 
     return () => {
@@ -437,6 +525,8 @@ const Dashboard = () => {
       socketService.off('message:edited', handleMessageEdited);
       socketService.off('message:deleted', handleMessageDeleted);
       socketService.off('message:reaction', handleMessageReaction);
+      socketService.off('message:seen', handleMessageSeen);
+      socketService.off('messages:seen', handleMessagesSeen);
       socketService.off('notification:new', handleNotification);
     };
   }, []); // Remove dependencies to prevent recreation of event listeners
@@ -449,9 +539,12 @@ const Dashboard = () => {
   // Load messages when group changes
   useEffect(() => {
     if (selectedGroup) {
+      // Clear messages first to prevent stuck messages
+      setMessages([]);
       loadMessages(selectedGroup._id);
+      loadGroupMembers(selectedGroup._id);
     }
-  }, [selectedGroup, loadMessages]);
+  }, [selectedGroup, loadMessages, loadGroupMembers]);
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -461,11 +554,20 @@ const Dashboard = () => {
   // Join group when selected
   useEffect(() => {
     if (selectedGroup && socketService.isConnected()) {
+      // Leave previous group if it exists
+      if (previousGroupRef.current && previousGroupRef.current._id !== selectedGroup._id) {
+        console.log('Dashboard: Leaving previous group:', previousGroupRef.current._id);
+        socketService.leaveGroup(previousGroupRef.current._id);
+      }
+      
+      console.log('Dashboard: Joining group:', selectedGroup._id);
       socketService.joinGroup(selectedGroup._id);
+      previousGroupRef.current = selectedGroup;
     } else if (selectedGroup && !socketService.isConnected()) {
       // Try to reconnect
       const token = localStorage.getItem('token');
       if (token) {
+        console.log('Dashboard: Reconnecting socket for group:', selectedGroup._id);
         socketService.connect(token);
       }
     }
@@ -477,6 +579,49 @@ const Dashboard = () => {
       socketService.joinGroup(selectedGroup._id);
     }
   }, [socketConnected, selectedGroup]);
+
+  // Mark messages as seen when they come into view
+  useEffect(() => {
+    if (!selectedGroup || !socketService.isConnected()) return;
+
+    const markMessagesAsSeen = () => {
+      const messageIds = messages
+        .filter(msg => {
+          // Only mark messages as seen if:
+          // 1. Not our own message
+          // 2. Not already seen by us
+          // 3. Not optimistic message
+          const isOwnMessage = msg.senderId._id === user.id || msg.senderId._id === user._id;
+          const alreadySeen = msg.seenBy?.some(s => s.user === user.id || s.user === user._id);
+          const isOptimistic = msg.isOptimistic;
+          
+          console.log('Checking message for seen status:', {
+            messageId: msg._id,
+            isOwnMessage,
+            alreadySeen,
+            isOptimistic,
+            seenBy: msg.seenBy,
+            currentUserId: user.id
+          });
+          
+          return !isOwnMessage && !isOptimistic && !alreadySeen;
+        })
+        .map(msg => msg._id);
+
+      if (messageIds.length > 0) {
+        console.log('Marking messages as seen:', messageIds);
+        socketService.emit('message:seen', {
+          messageIds,
+          groupId: selectedGroup._id
+        });
+      }
+    };
+
+    // Mark messages as seen after a short delay to ensure they're visible
+    const timeoutId = setTimeout(markMessagesAsSeen, 1000);
+
+    return () => clearTimeout(timeoutId);
+  }, [messages, selectedGroup, user.id, user._id]);
 
 
   if (loading && !selectedGroup) {
@@ -559,6 +704,15 @@ const Dashboard = () => {
                 😊
               </button>
 
+              {/* Settings */}
+              <button
+                onClick={() => setShowSettings(true)}
+                className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                title="Settings"
+              >
+                <SettingsIcon className="h-5 w-5" />
+              </button>
+
               {/* Notifications */}
               <button
                 onClick={() => setShowNotificationPanel(!showNotificationPanel)}
@@ -592,6 +746,7 @@ const Dashboard = () => {
             replyToMessage={replyToMessage}
             onClearReply={() => setReplyToMessage(null)}
             loading={loading}
+            groupMembers={groupMembers}
           />
         ) : (
           <div className="flex-1 flex items-center justify-center bg-gray-50 dark:bg-gray-900">
@@ -631,6 +786,16 @@ const Dashboard = () => {
           <EmojiPickerTest />
         </div>
       )}
+
+      {/* Settings Modal */}
+      <Settings
+        isVisible={showSettings}
+        onClose={() => setShowSettings(false)}
+        currentUser={user}
+        selectedGroup={selectedGroup}
+        onUserUpdate={handleUserUpdate}
+        onGroupLeave={handleGroupLeave}
+      />
 
     </div>
   );

@@ -668,15 +668,15 @@ const getGroupMembers = asyncHandler(async (req, res) => {
         return res.json(cachedMembers);
     }
 
-    // Get all group members with their online status
-    const allMemberIds = [...group.users, ...group.managers];
+    // Get all group members with their online status (including creator)
+    const allMemberIds = [...group.users, ...group.managers, group.createdBy];
     const members = await User.find({ _id: { $in: allMemberIds } })
-        .select('username email isOnline lastSeen role')
+        .select('username email isOnline lastSeen role profile.firstName profile.lastName')
         .lean();
 
     // Separate users and managers
     const users = members.filter(member => group.users.includes(member._id));
-    const managers = members.filter(member => group.managers.includes(member._id));
+    const managers = members.filter(member => group.managers.includes(member._id) || member._id.equals(group.createdBy));
 
     const result = {
         users,

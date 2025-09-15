@@ -10,6 +10,7 @@ const groupRoutes = require('./routes/groupRoutes');
 const messageRoutes = require('./routes/messageRoutes');
 const fileRoutes = require('./routes/fileRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
+const userRoutes = require('./routes/userRoutes');
 
 // Error handling
 const { ErrorHandler } = require('./utils/errors');
@@ -198,6 +199,7 @@ app.use('/api/groups', groupRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/files', fileRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/users', userRoutes);
 
 // 404 handler (must be before global error handler)
 app.use('*', notFoundHandler);

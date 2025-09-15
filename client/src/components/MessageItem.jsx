@@ -1,21 +1,23 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { MoreVertical, Edit, Trash2, Check, CheckCheck, Smile, Reply } from 'lucide-react';
+import { MoreVertical, Edit, Trash2, Check, CheckCheck, Smile, Reply, Info } from 'lucide-react';
 import { formatDate } from '../utils/formatDate';
 
-const MessageItem = ({ 
-  message, 
-  currentUser, 
-  onEdit, 
-  onDelete, 
-  onReact, 
+const MessageItem = ({
+  message,
+  currentUser,
+  onEdit,
+  onDelete,
+  onReact,
   onReply,
   isSelected = false,
   onSelect,
-  selectionMode = false
+  selectionMode = false,
+  onShowSeenStatus
 }) => {
   const [showMenu, setShowMenu] = useState(false);
   const [showReactions, setShowReactions] = useState(false);
+  const [showSeenStatus, setShowSeenStatus] = useState(false);
   const [pickerPosition, setPickerPosition] = useState({ x: 0, y: 0 });
   const messageRef = useRef(null);
 
@@ -23,7 +25,7 @@ const MessageItem = ({
   if (!message || !currentUser || !message.senderId) {
     return null;
   }
-  
+
   const isOwnMessage = message.senderId._id === currentUser.id || message.senderId._id === currentUser._id;
   const isOptimistic = message.isOptimistic;
 
@@ -50,7 +52,7 @@ const MessageItem = ({
     console.log('MessageItem: isOwnMessage:', isOwnMessage);
     console.log('MessageItem: currentUser:', currentUser);
     console.log('MessageItem: message.senderId:', message.senderId);
-    
+
     if (onEdit) {
       onEdit(message);
     } else {
@@ -94,7 +96,7 @@ const MessageItem = ({
 
   const getDeliveryStatus = () => {
     if (isOptimistic || !currentUser) return null;
-    
+
     if (message.seenBy?.some(s => s.user === currentUser.id || s.user === currentUser._id)) {
       return <CheckCheck className="h-3 w-3 text-blue-500" />;
     } else if (message.deliveredTo?.some(d => d.user === currentUser.id || d.user === currentUser._id)) {
@@ -102,6 +104,20 @@ const MessageItem = ({
     } else {
       return <Check className="h-3 w-3 text-gray-400" />;
     }
+  };
+
+  const handleShowSeenStatus = () => {
+    if (onShowSeenStatus) {
+      onShowSeenStatus(message);
+    }
+  };
+
+  const getSeenCount = () => {
+    return message.seenBy?.length || 0;
+  };
+
+  const hasSeenStatus = () => {
+    return message.seenBy && message.seenBy.length > 0;
   };
 
   return (
@@ -117,17 +133,15 @@ const MessageItem = ({
           />
         </div>
       )}
-      
+
       <div className={`max-w-xs lg:max-w-md xl:max-w-lg min-w-0 ${isOwnMessage ? 'order-2' : 'order-1'}`}>
         {/* Message Bubble */}
         <div
-          className={`relative px-4 py-2 rounded-lg min-w-0 transition-all duration-200 ${
-            isOwnMessage
-              ? 'bg-blue-500 text-white'
-              : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white'
-          } ${isOptimistic ? 'opacity-70' : ''} ${
-            selectionMode && isSelected ? 'ring-2 ring-blue-500 bg-blue-50 dark:bg-blue-900/20' : ''
-          }`}
+          className={`relative px-4 py-2 rounded-lg min-w-0 transition-all duration-200 ${isOwnMessage
+            ? 'bg-blue-500 text-white'
+            : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white'
+            } ${isOptimistic ? 'opacity-70' : ''} ${selectionMode && isSelected ? 'ring-2 ring-blue-500 bg-blue-50 dark:bg-blue-900/20' : ''
+            }`}
         >
           {/* Message Content */}
           <div className={`break-words overflow-wrap-anywhere ${message.isDeleted ? 'italic text-gray-500 dark:text-gray-400' : ''}`}>
@@ -182,14 +196,13 @@ const MessageItem = ({
                   <button
                     key={emoji}
                     onClick={() => handleReact(emoji)}
-                    className={`px-2 py-1 rounded-full text-xs flex items-center space-x-1 transition-colors ${
-                      message.reactions.some(r => 
-                        r.emoji === emoji && 
-                        (r.user === currentUser.id || r.user === currentUser._id)
-                      )
-                        ? 'bg-blue-500 text-white'
-                        : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-500'
-                    }`}
+                    className={`px-2 py-1 rounded-full text-xs flex items-center space-x-1 transition-colors ${message.reactions.some(r =>
+                      r.emoji === emoji &&
+                      (r.user === currentUser.id || r.user === currentUser._id)
+                    )
+                      ? 'bg-blue-500 text-white'
+                      : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-500'
+                      }`}
                   >
                     <span>{emoji}</span>
                     <span>{count}</span>
@@ -197,7 +210,11 @@ const MessageItem = ({
                 ))}
               </div>
             )}
-            
+
+
+
+
+
             {/* Quick React Button */}
             <button
               onClick={() => {
@@ -209,71 +226,54 @@ const MessageItem = ({
             >
               <Smile className="h-4 w-4" />
             </button>
-            
-            {/* Temporary Test Button - Always Visible */}
-            {!message.isDeleted && (
-              <button
-                onClick={() => {
-                  console.log('Test react button clicked');
-                  setShowReactions(!showReactions);
-                }}
-                className="ml-1 p-1 text-blue-500 hover:text-blue-700"
-                title="Test reaction (always visible)"
-              >
-                😊
-              </button>
-            )}
           </div>
 
           {/* Message Actions Menu - Available for all users */}
           {!isOptimistic && !message.isDeleted && (
-            <div className={`absolute top-0 ${isOwnMessage ? 'right-0 transform translate-x-full' : 'left-0 transform -translate-x-full'} opacity-0 group-hover:opacity-100 transition-opacity`}>
+            <div className={`border border-red-500 absolute top-0 ${isOwnMessage ? 'right-0 transform translate-x-full' : 'left-0 transform -translate-x-full'} opacity-0 group-hover:opacity-100 transition-opacity`}>
               <div className="relative">
-                <button
-                  onClick={() => setShowMenu(!showMenu)}
-                  className="p-1 bg-gray-800 text-white rounded-full hover:bg-gray-700"
+                <div
+                  className={`absolute ${isOwnMessage ? "right-0" : "left-0"
+                    } bottom-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-10 flex space-x-2 px-2 py-1`}
                 >
-                  <MoreVertical className="h-3 w-3" />
-                </button>
+                  {/* Reply */}
+                  <button
+                    onClick={handleReply}
+                    className="relative group p-2 flex items-center justify-center text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                  >
+                    <Reply className="h-4 w-4" />
+                    {/* Tooltip */}
+                    <span className="absolute bottom-full mb-1 px-2 py-1 text-xs text-white bg-black rounded opacity-0 group-hover:opacity-100 transition whitespace-nowrap">
+                      Reply
+                    </span>
+                  </button>
 
-                {showMenu && (
-                  <div className={`absolute ${isOwnMessage ? 'right-0' : 'left-0'} top-8 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-10 min-w-32 z-50`}>
-                    <button
-                      onClick={handleReply}
-                      className="w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2"
-                    >
-                      <Reply className="h-3 w-3" />
-                      <span>Reply</span>
-                    </button>
-                    
-                    {/* <button
-                      onClick={() => setShowReactions(true)}
-                      className="w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2"
-                    >
-                      <Smile className="h-3 w-3" />
-                      <span>React</span>
-                    </button> */}
-                    
-                    {isOwnMessage && (
-                      <>
-                        <button
-                          onClick={handleEdit}
-                          className="w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2"
-                        >
-                          <Edit className="h-3 w-3" />
-                          <span>Edit</span>
-                        </button>
-                        <button
-                          onClick={handleDelete}
-                          className="w-full px-3 py-2 text-left text-sm text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                          <span>Delete</span>
-                        </button>
-                      </>
-                    )}
-                  </div>
-                )}
+                  {/* Edit (only for own messages) */}
+                  {isOwnMessage && (
+                    <>
+                      <button
+                        onClick={handleEdit}
+                        className="relative group p-2 flex items-center justify-center text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                      >
+                        <Edit className="h-4 w-4" />
+                        <span className="absolute bottom-full mb-1 px-2 py-1 text-xs text-white bg-black rounded opacity-0 group-hover:opacity-100 transition whitespace-nowrap">
+                          Edit
+                        </span>
+                      </button>
+
+                      <button
+                        onClick={handleDelete}
+                        className="relative group p-2 flex items-center justify-center text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        <span className="absolute bottom-full mb-1 px-2 py-1 text-xs text-white bg-black rounded opacity-0 group-hover:opacity-100 transition whitespace-nowrap">
+                          Delete
+                        </span>
+                      </button>
+                    </>
+                  )}
+                </div>
+
               </div>
             </div>
           )}
@@ -284,10 +284,26 @@ const MessageItem = ({
           <span className="text-xs text-gray-500 dark:text-gray-400">
             {formatTime(message.createdAt)}
           </span>
-          
+
           {/* Delivery Status */}
           {isOwnMessage && getDeliveryStatus()}
-          
+
+          {/* Seen Status Info Icon */}
+          {isOwnMessage && hasSeenStatus() && (
+            <button
+              onClick={handleShowSeenStatus}
+              className="ml-1 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors group relative"
+              title={`${getSeenCount()} member${getSeenCount() !== 1 ? 's' : ''} seen this message`}
+            >
+              <Info className="h-3 w-3 text-blue-500 group-hover:text-blue-600" />
+              {getSeenCount() > 1 && (
+                <span className="absolute -top-1 -right-1 bg-blue-500 text-white text-xs rounded-full h-4 w-4 flex items-center justify-center text-[10px] font-medium">
+                  {getSeenCount()}
+                </span>
+              )}
+            </button>
+          )}
+
           {/* Edited Indicator */}
           {message.edited?.isEdited && (
             <span className="text-xs text-gray-500 dark:text-gray-400 italic">
@@ -306,7 +322,7 @@ const MessageItem = ({
 
       {/* Reactions Picker - Portal */}
       {showReactions && createPortal(
-        <div 
+        <div
           className="fixed bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-3 z-[9999]"
           style={{
             left: `${pickerPosition.x}px`,

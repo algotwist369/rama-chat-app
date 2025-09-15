@@ -3,6 +3,7 @@ import { Send, Paperclip, Smile, CheckSquare, Square } from 'lucide-react';
 import MessageItem from './MessageItem';
 import MessageSelector from './MessageSelector';
 import LoadingSpinner from './common/LoadingSpinner';
+import SeenStatusModal from './SeenStatusModal';
 import socketService from '../sockets/socket';
 import toast from 'react-hot-toast';
 
@@ -18,13 +19,16 @@ const ChatWindow = ({
   onReplyToMessage,
   replyToMessage,
   onClearReply,
-  loading 
+  loading,
+  groupMembers = []
 }) => {
   const [messageText, setMessageText] = useState('');
   const [editingMessage, setEditingMessage] = useState(null);
   const [typingUsers, setTypingUsers] = useState([]);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedMessages, setSelectedMessages] = useState(new Set());
+  const [showSeenStatusModal, setShowSeenStatusModal] = useState(false);
+  const [selectedMessageForSeenStatus, setSelectedMessageForSeenStatus] = useState(null);
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
   const typingTimeoutRef = useRef(null);
@@ -107,6 +111,18 @@ const ChatWindow = ({
   // Clear typing users when group changes
   useEffect(() => {
     setTypingUsers([]);
+  }, [group]);
+
+  // Clear all state when group changes to prevent stuck states
+  useEffect(() => {
+    console.log('ChatWindow: Group changed, clearing state');
+    setMessageText('');
+    setEditingMessage(null);
+    setTypingUsers([]);
+    setSelectionMode(false);
+    setSelectedMessages(new Set());
+    setShowSeenStatusModal(false);
+    setSelectedMessageForSeenStatus(null);
   }, [group]);
 
   // Debug: Monitor editingMessage state changes
@@ -230,6 +246,18 @@ const ChatWindow = ({
     setMessageText('');
   };
 
+  // Handle show seen status
+  const handleShowSeenStatus = (message) => {
+    setSelectedMessageForSeenStatus(message);
+    setShowSeenStatusModal(true);
+  };
+
+  // Handle close seen status modal
+  const handleCloseSeenStatusModal = () => {
+    setShowSeenStatusModal(false);
+    setSelectedMessageForSeenStatus(null);
+  };
+
   return (
     <div className="flex-1 flex flex-col bg-white dark:bg-gray-900 min-h-0 min-w-0 overflow-hidden">
       {/* Messages Area */}
@@ -264,6 +292,7 @@ const ChatWindow = ({
                 isSelected={selectedMessages.has(message._id)}
                 onSelect={handleSelectMessage}
                 selectionMode={selectionMode}
+                onShowSeenStatus={handleShowSeenStatus}
               />
             ))
         )}
@@ -415,6 +444,14 @@ const ChatWindow = ({
         onClearSelection={handleClearSelection}
         onDeleteSelected={handleDeleteSelected}
         currentUser={currentUser}
+      />
+
+      {/* Seen Status Modal */}
+      <SeenStatusModal
+        isVisible={showSeenStatusModal}
+        onClose={handleCloseSeenStatusModal}
+        message={selectedMessageForSeenStatus}
+        groupMembers={groupMembers}
       />
     </div>
   );
