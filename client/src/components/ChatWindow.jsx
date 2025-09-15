@@ -13,6 +13,7 @@ const ChatWindow = ({
   onSendMessage, 
   onEditMessage, 
   onDeleteMessage, 
+  onBulkDeleteMessages,
   onReactToMessage,
   onReplyToMessage,
   replyToMessage,
@@ -129,17 +130,14 @@ const ChatWindow = ({
   const handleDeleteSelected = useCallback(async (messageIds) => {
     try {
       console.log('Deleting messages:', messageIds);
-      // Call the parent's delete function for each message
-      for (const messageId of messageIds) {
-        await onDeleteMessage(messageId);
-      }
-      toast.success(`${messageIds.length} message(s) deleted successfully`);
+      // Use the bulk delete function instead of individual deletes
+      await onBulkDeleteMessages(messageIds);
       handleClearSelection();
     } catch (error) {
       console.error('Failed to delete messages:', error);
       toast.error('Failed to delete messages');
     }
-  }, [onDeleteMessage]);
+  }, [onBulkDeleteMessages]);
 
   // Cleanup typing timeout on unmount
   useEffect(() => {
@@ -399,7 +397,7 @@ const ChatWindow = ({
 
       {/* Message Selector */}
       <MessageSelector
-        selectedMessages={Array.from(selectedMessages)}
+        selectedMessages={Array.from(selectedMessages).map(id => messages.find(msg => msg._id === id)).filter(Boolean)}
         onClearSelection={handleClearSelection}
         onDeleteSelected={handleDeleteSelected}
         currentUser={currentUser}

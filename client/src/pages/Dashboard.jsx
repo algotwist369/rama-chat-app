@@ -331,6 +331,22 @@ const Dashboard = () => {
     }
   }, [selectedGroup]);
 
+  // Bulk delete messages without individual confirmations
+  const handleBulkDeleteMessages = useCallback(async (messageIds) => {
+    try {
+      for (const messageId of messageIds) {
+        if (socketService.isConnected()) {
+          socketService.emit('message:delete', { messageId, groupId: selectedGroup._id });
+        } else {
+          await messageApi.deleteMessage(messageId);
+        }
+      }
+      toast.success(`${messageIds.length} message(s) deleted successfully`);
+    } catch (error) {
+      toast.error('Failed to delete messages');
+    }
+  }, [selectedGroup]);
+
   // React to message
   const handleReactToMessage = useCallback(async (messageId, emoji) => {
     try {
@@ -555,6 +571,7 @@ const Dashboard = () => {
             onSendMessage={handleSendMessage}
             onEditMessage={handleEditMessage}
             onDeleteMessage={handleDeleteMessage}
+            onBulkDeleteMessages={handleBulkDeleteMessages}
             onReactToMessage={handleReactToMessage}
             onReplyToMessage={handleReplyToMessage}
             replyToMessage={replyToMessage}

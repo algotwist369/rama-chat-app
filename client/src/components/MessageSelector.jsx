@@ -18,8 +18,15 @@ const MessageSelector = ({
 
   const handleDelete = () => {
     if (window.confirm(`Are you sure you want to delete ${selectedMessages.length} message(s)?`)) {
-      onDeleteSelected(selectedMessages);
-      onClearSelection();
+      // Extract message IDs from the selected messages, with safety checks
+      const messageIds = selectedMessages
+        .filter(msg => msg && msg._id) // Filter out any undefined/null messages
+        .map(msg => msg._id);
+      
+      if (messageIds.length > 0) {
+        onDeleteSelected(messageIds);
+        onClearSelection();
+      }
     }
   };
 
