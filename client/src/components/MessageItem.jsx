@@ -124,9 +124,16 @@ const MessageItem = ({
           }`}
         >
           {/* Message Content */}
-          <div className="break-words overflow-wrap-anywhere">
-            {message.content}
-            {message.edited?.isEdited && (
+          <div className={`break-words overflow-wrap-anywhere ${message.isDeleted ? 'italic text-gray-500 dark:text-gray-400' : ''}`}>
+            {message.isDeleted ? (
+              <span className="flex items-center">
+                <span className="mr-2">🗑️</span>
+                {message.content}
+              </span>
+            ) : (
+              message.content
+            )}
+            {message.edited?.isEdited && !message.isDeleted && (
               <span className="ml-2 text-xs opacity-70 italic">
                 (edited)
               </span>
@@ -198,20 +205,22 @@ const MessageItem = ({
             </button>
             
             {/* Temporary Test Button - Always Visible */}
-            <button
-              onClick={() => {
-                console.log('Test react button clicked');
-                setShowReactions(!showReactions);
-              }}
-              className="ml-1 p-1 text-blue-500 hover:text-blue-700"
-              title="Test reaction (always visible)"
-            >
-              😊
-            </button>
+            {!message.isDeleted && (
+              <button
+                onClick={() => {
+                  console.log('Test react button clicked');
+                  setShowReactions(!showReactions);
+                }}
+                className="ml-1 p-1 text-blue-500 hover:text-blue-700"
+                title="Test reaction (always visible)"
+              >
+                😊
+              </button>
+            )}
           </div>
 
           {/* Message Actions Menu - Available for all users */}
-          {!isOptimistic && (
+          {!isOptimistic && !message.isDeleted && (
             <div className={`absolute top-0 ${isOwnMessage ? 'right-0 transform translate-x-full' : 'left-0 transform -translate-x-full'} opacity-0 group-hover:opacity-100 transition-opacity`}>
               <div className="relative">
                 <button
@@ -222,7 +231,7 @@ const MessageItem = ({
                 </button>
 
                 {showMenu && (
-                  <div className={`absolute ${isOwnMessage ? 'right-0' : 'left-0'} top-8 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-10 min-w-32`}>
+                  <div className={`absolute ${isOwnMessage ? 'right-0' : 'left-0'} top-8 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-10 min-w-32 z-50`}>
                     <button
                       onClick={handleReply}
                       className="w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2"

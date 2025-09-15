@@ -98,8 +98,8 @@ class EnvironmentConfig {
         process.env.MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://infoalgotwist_db_user:inH2z5QJVydf9JYN@cluster0.w6hcrf0.mongodb.net/rama-chat-app';
         
         // Local CORS
-        process.env.CORS_ORIGINS = process.env.CORS_ORIGINS || 'http://localhost:5173,http://localhost:3000';
-        process.env.SOCKET_CORS_ORIGINS = process.env.SOCKET_CORS_ORIGINS || 'http://localhost:5173,http://localhost:3000';
+        process.env.CORS_ORIGINS = process.env.CORS_ORIGINS || 'http://localhost:5173,http://localhost:5174,http://localhost:3000';
+        process.env.SOCKET_CORS_ORIGINS = process.env.SOCKET_CORS_ORIGINS || 'http://localhost:5173,http://localhost:5174,http://localhost:3000';
         
         // Local file uploads
         process.env.FILE_BASE_URL = process.env.FILE_BASE_URL || 'http://localhost:9080';

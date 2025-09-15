@@ -188,7 +188,18 @@ const Dashboard = () => {
   // Handle message deleted
   const handleMessageDeleted = useCallback(({ messageId }) => {
     const currentSetMessages = setMessagesRef.current;
-    currentSetMessages(prev => prev.filter(msg => msg._id !== messageId));
+    currentSetMessages(prev => 
+      prev.map(msg => 
+        msg._id === messageId 
+          ? { 
+              ...msg, 
+              content: 'This message has been deleted', 
+              isDeleted: true,
+              deletedAt: new Date().toISOString()
+            }
+          : msg
+      )
+    );
   }, []);
 
   // Handle message reaction
