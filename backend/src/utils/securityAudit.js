@@ -90,8 +90,11 @@ class SecurityAudit {
         }
 
         // Check for default values
-        if (process.env.NODE_ENV === 'production' && process.env.JWT_SECRET === 'your-secret-key') {
-            check.issues.push('Using default JWT secret in production');
+        if (process.env.NODE_ENV === 'production' && 
+            (process.env.JWT_SECRET === 'your-secret-key' || 
+             process.env.JWT_SECRET === 'local-development-secret-change-in-production' ||
+             process.env.JWT_SECRET.includes('CHANGE-THIS'))) {
+            check.issues.push('Using default or insecure JWT secret in production');
             check.status = 'fail';
         }
 

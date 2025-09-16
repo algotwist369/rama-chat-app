@@ -47,124 +47,61 @@ class EnvironmentConfig {
      */
     loadConfig() {
         const configPath = path.join(__dirname, '..', '..', '.env');
-        const localConfigPath = path.join(__dirname, '..', '..', '.env.local');
-        const productionConfigPath = path.join(__dirname, '..', '..', '.env.production');
-        const developmentConfigPath = path.join(__dirname, '..', '..', '.env.development');
 
-        // Load base .env file if exists
+        // Load consolidated .env file
         if (fs.existsSync(configPath)) {
             require('dotenv').config({ path: configPath });
-        }
-
-        // Load environment-specific config
-        if (this.isLocal || this.isDevelopment) {
-            if (fs.existsSync(developmentConfigPath)) {
-                require('dotenv').config({ path: developmentConfigPath, override: true });
-                console.log('🔧 Loaded development configuration');
-            } else if (fs.existsSync(localConfigPath)) {
-                require('dotenv').config({ path: localConfigPath, override: true });
-                console.log('🏠 Loaded local configuration');
-            } else {
-                this.setupLocalDefaults();
-            }
-        } else if (this.isProduction) {
-            if (fs.existsSync(productionConfigPath)) {
-                require('dotenv').config({ path: productionConfigPath, override: true });
-                console.log('🚀 Loaded production configuration');
-            } else {
-                this.setupProductionDefaults();
-            }
+            console.log('📁 Loaded consolidated .env configuration');
+        } else {
+            console.warn('⚠️  No .env file found, using defaults');
+            this.setupDefaults();
         }
 
         this.validateAndSetDefaults();
     }
 
     /**
-     * Setup local development defaults
+     * Setup default configuration when .env file is not found
      */
-    setupLocalDefaults() {
-        console.log('🏠 Setting up local development environment...');
+    setupDefaults() {
+        console.log('🔧 Setting up default environment configuration...');
         
-        // Set local defaults
-        process.env.NODE_ENV = 'development';
+        // Set basic defaults
+        process.env.NODE_ENV = process.env.NODE_ENV || 'development';
         process.env.PORT = process.env.PORT || '9080';
         process.env.HOST = process.env.HOST || 'localhost';
         
-        // Local API configuration
+        // API configuration
         process.env.API_URL = process.env.API_URL || 'http://localhost:9080';
         process.env.FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
         
-        // Local database
-        process.env.MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://infoalgotwist_db_user:inH2z5QJVydf9JYN@cluster0.w6hcrf0.mongodb.net/rama-chat-app';
+        // Database - require user to set MONGO_URI
+        if (!process.env.MONGO_URI) {
+            console.error('❌ MONGO_URI is required. Please set it in your .env file');
+            process.exit(1);
+        }
         
-        // Local CORS
-        process.env.CORS_ORIGINS = process.env.CORS_ORIGINS || 'http://localhost:5173,http://localhost:5174,http://localhost:3000';
-        process.env.SOCKET_CORS_ORIGINS = process.env.SOCKET_CORS_ORIGINS || 'http://localhost:5173,http://localhost:5174,http://localhost:3000';
+        // CORS
+        process.env.CORS_ORIGINS = process.env.CORS_ORIGINS || 'http://localhost:5173,http://localhost:3000';
+        process.env.SOCKET_CORS_ORIGINS = process.env.SOCKET_CORS_ORIGINS || 'http://localhost:5173,http://localhost:3000';
         
-        // Local file uploads
+        // File uploads
         process.env.FILE_BASE_URL = process.env.FILE_BASE_URL || 'http://localhost:9080';
         process.env.UPLOAD_PATH = process.env.UPLOAD_PATH || '/uploads/chat-files';
         
-        // Development JWT (less secure for local development)
+        // JWT - require user to set JWT_SECRET
         if (!process.env.JWT_SECRET) {
-            process.env.JWT_SECRET = 'local-development-secret-change-in-production';
+            console.error('❌ JWT_SECRET is required. Please set it in your .env file');
+            process.exit(1);
         }
         
-        // Local Redis (enabled for better performance)
-        process.env.USE_REDIS = process.env.USE_REDIS || 'true';
+        // Redis
+        process.env.USE_REDIS = process.env.USE_REDIS || 'false';
         process.env.REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
         
-        console.log('✅ Local development environment configured');
+        console.log('✅ Default environment configuration set');
     }
 
-    /**
-     * Setup production defaults
-     */
-    setupProductionDefaults() {
-        console.log('🚀 Setting up production environment...');
-        
-        // Production environment
-        process.env.NODE_ENV = 'production';
-        process.env.PORT = process.env.PORT || '5000';
-        process.env.HOST = process.env.HOST || '0.0.0.0';
-        
-        // Production API configuration
-        process.env.API_URL = process.env.API_URL || 'https://c.api.d0s369.co.in';
-        process.env.FRONTEND_URL = process.env.FRONTEND_URL || 'https://chat.d0s369.co.in';
-        
-        // Production database (MongoDB Atlas)
-        process.env.MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://infoalgotwist_db_user:inH2z5QJVydf9JYN@cluster0.w6hcrf0.mongodb.net/rama-chat-app';
-        process.env.MONGO_SSL = process.env.MONGO_SSL || 'true';
-        process.env.MONGO_SSL_VALIDATE = process.env.MONGO_SSL_VALIDATE || 'true';
-        
-        // Production CORS
-        process.env.CORS_ORIGINS = process.env.CORS_ORIGINS || 'https://chat.d0s369.co.in';
-        process.env.SOCKET_CORS_ORIGINS = process.env.SOCKET_CORS_ORIGINS || 'https://chat.d0s369.co.in';
-        
-        // Production file uploads
-        process.env.FILE_BASE_URL = process.env.FILE_BASE_URL || 'https://c.api.d0s369.co.in';
-        process.env.UPLOAD_PATH = process.env.UPLOAD_PATH || '/uploads/chat-files';
-        
-        // Production JWT (must be set securely)
-        if (!process.env.JWT_SECRET || process.env.JWT_SECRET.includes('local-development')) {
-            console.warn('⚠️  WARNING: Using default JWT secret in production! Please set JWT_SECRET environment variable.');
-            process.env.JWT_SECRET = 'CHANGE-THIS-IN-PRODUCTION-' + Date.now();
-        }
-        
-        // Production Redis (recommended)
-        if (!process.env.USE_REDIS) {
-            process.env.USE_REDIS = 'true';
-        }
-        process.env.REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
-        process.env.REDIS_PASSWORD = process.env.REDIS_PASSWORD || 'ramachat123';
-        
-        // Production security settings
-        process.env.BCRYPT_ROUNDS = process.env.BCRYPT_ROUNDS || '12';
-        process.env.RATE_LIMIT_WINDOW_MS = process.env.RATE_LIMIT_WINDOW_MS || '900000';
-        process.env.RATE_LIMIT_MAX_REQUESTS = process.env.RATE_LIMIT_MAX_REQUESTS || '100';
-        
-        console.log('✅ Production environment configured');
-    }
 
     /**
      * Validate and set additional defaults
@@ -177,9 +114,11 @@ class EnvironmentConfig {
         // MongoDB Configuration
         process.env.MONGO_SERVER_SELECTION_TIMEOUT = process.env.MONGO_SERVER_SELECTION_TIMEOUT || '30000';
         process.env.MONGO_SOCKET_TIMEOUT = process.env.MONGO_SOCKET_TIMEOUT || '45000';
+        process.env.MONGO_CONNECT_TIMEOUT = process.env.MONGO_CONNECT_TIMEOUT || '10000';
         process.env.MONGO_MAX_POOL_SIZE = process.env.MONGO_MAX_POOL_SIZE || '10';
         process.env.MONGO_MIN_POOL_SIZE = process.env.MONGO_MIN_POOL_SIZE || '1';
         process.env.MONGO_MAX_IDLE_TIME = process.env.MONGO_MAX_IDLE_TIME || '30000';
+        process.env.MONGO_WAIT_QUEUE_TIMEOUT = process.env.MONGO_WAIT_QUEUE_TIMEOUT || '10000';
         
         // CORS Configuration
         process.env.CORS_CREDENTIALS = process.env.CORS_CREDENTIALS || 'true';
@@ -206,6 +145,24 @@ class EnvironmentConfig {
         // Body parsing limits
         process.env.JSON_LIMIT = process.env.JSON_LIMIT || '10mb';
         process.env.URL_LIMIT = process.env.URL_LIMIT || '10mb';
+        process.env.MAX_REQUEST_SIZE = process.env.MAX_REQUEST_SIZE || '10mb';
+        
+        // Security Configuration
+        process.env.BCRYPT_ROUNDS = process.env.BCRYPT_ROUNDS || '12';
+        process.env.RATE_LIMIT_WINDOW_MS = process.env.RATE_LIMIT_WINDOW_MS || '900000';
+        process.env.RATE_LIMIT_MAX_REQUESTS = process.env.RATE_LIMIT_MAX_REQUESTS || '100';
+        process.env.FREQUENCY_LIMIT_WINDOW = process.env.FREQUENCY_LIMIT_WINDOW || '60000';
+        process.env.FREQUENCY_LIMIT_MAX = process.env.FREQUENCY_LIMIT_MAX || '100';
+        
+        // Feature Flags
+        process.env.ENABLE_DEBUG_ROUTES = process.env.ENABLE_DEBUG_ROUTES || 'false';
+        process.env.ENABLE_SWAGGER_UI = process.env.ENABLE_SWAGGER_UI || 'false';
+        process.env.ENABLE_METRICS = process.env.ENABLE_METRICS || 'false';
+        process.env.ENABLE_USER_AGENT_VALIDATION = process.env.ENABLE_USER_AGENT_VALIDATION || 'true';
+        process.env.ENABLE_FILE_UPLOAD_SECURITY = process.env.ENABLE_FILE_UPLOAD_SECURITY || 'true';
+        process.env.ENABLE_HEALTH_CHECKS = process.env.ENABLE_HEALTH_CHECKS || 'true';
+        process.env.HEALTH_CHECK_INTERVAL = process.env.HEALTH_CHECK_INTERVAL || '30000';
+        process.env.ENABLE_PERFORMANCE_MONITORING = process.env.ENABLE_PERFORMANCE_MONITORING || 'false';
     }
 
     /**
@@ -243,6 +200,9 @@ class EnvironmentConfig {
         console.log(`Frontend URL: ${info.frontendUrl}`);
         console.log(`Database: ${info.mongoUri}`);
         console.log(`JWT Secret: ${info.jwtSecret}`);
+        console.log(`Redis: ${process.env.USE_REDIS === 'true' ? '✅ Enabled' : '❌ Disabled'}`);
+        console.log(`Debug Routes: ${process.env.ENABLE_DEBUG_ROUTES === 'true' ? '✅ Enabled' : '❌ Disabled'}`);
+        console.log(`Metrics: ${process.env.ENABLE_METRICS === 'true' ? '✅ Enabled' : '❌ Disabled'}`);
         console.log('============================\n');
     }
 }
