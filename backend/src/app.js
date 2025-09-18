@@ -193,13 +193,24 @@ app.get('/health/security', async (req, res) => {
     }
 });
 
-// Routes
+// API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/groups', groupRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/files', fileRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/users', userRoutes);
+
+// Serve frontend static files in production
+if (process.env.NODE_ENV === 'production') {
+    const frontendPath = path.join(__dirname, '../../client/dist');
+    app.use(express.static(frontendPath));
+    
+    // Serve React app for all non-API routes (only for GET requests)
+    app.get('*', (req, res) => {
+        res.sendFile(path.join(frontendPath, 'index.html'));
+    });
+}
 
 // 404 handler (must be before global error handler)
 app.use('*', notFoundHandler);

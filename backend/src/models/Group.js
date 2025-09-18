@@ -29,11 +29,13 @@ const groupSchema = new mongoose.Schema({
     },
     managers: [{
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'User'
+        ref: 'User',
+        default: undefined
     }],
     users: [{
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'User'
+        ref: 'User',
+        default: undefined
     }],
     // Group settings
     settings: {
@@ -104,27 +106,29 @@ groupSchema.index({ name: 'text', description: 'text' }); // Text search index
 
 // Virtual for total member count (users + managers + creator)
 groupSchema.virtual('totalMembers').get(function() {
-    return this.users.length + this.managers.length + 1; // +1 for creator
+    const usersLen = Array.isArray(this.users) ? this.users.length : 0;
+    const managersLen = Array.isArray(this.managers) ? this.managers.length : 0;
+    return usersLen + managersLen + 1; // +1 for creator
 });
 
 // Virtual for member count
 groupSchema.virtual('memberCount').get(function() {
-    return this.users.length;
+    return Array.isArray(this.users) ? this.users.length : 0;
 });
 
 // Virtual for manager count
 groupSchema.virtual('managerCount').get(function() {
-    return this.managers.length;
+    return Array.isArray(this.managers) ? this.managers.length : 0;
 });
 
 // Instance method to check if user is member
 groupSchema.methods.isMember = function(userId) {
-    return this.users.some(id => id.toString() === userId.toString());
+    return Array.isArray(this.users) && this.users.some(id => id.toString() === userId.toString());
 };
 
 // Instance method to check if user is manager
 groupSchema.methods.isManager = function(userId) {
-    return this.managers.some(id => id.toString() === userId.toString());
+    return Array.isArray(this.managers) && this.managers.some(id => id.toString() === userId.toString());
 };
 
 // Instance method to check if user is creator
@@ -139,6 +143,7 @@ groupSchema.methods.hasAdminRights = function(userId) {
 
 // Instance method to add user to group
 groupSchema.methods.addUser = function(userId) {
+    if (!Array.isArray(this.users)) this.users = [];
     if (!this.isMember(userId)) {
         this.users.push(userId);
         this.stats.memberCount = this.users.length;
@@ -149,6 +154,7 @@ groupSchema.methods.addUser = function(userId) {
 
 // Instance method to remove user from group
 groupSchema.methods.removeUser = function(userId) {
+    if (!Array.isArray(this.users)) this.users = [];
     this.users = this.users.filter(id => id.toString() !== userId.toString());
     this.stats.memberCount = this.users.length;
     this.stats.lastActivity = new Date();
@@ -157,6 +163,7 @@ groupSchema.methods.removeUser = function(userId) {
 
 // Instance method to add manager
 groupSchema.methods.addManager = function(userId) {
+    if (!Array.isArray(this.managers)) this.managers = [];
     if (!this.isManager(userId) && !this.isCreator(userId)) {
         this.managers.push(userId);
         this.stats.lastActivity = new Date();
@@ -166,6 +173,7 @@ groupSchema.methods.addManager = function(userId) {
 
 // Instance method to remove manager
 groupSchema.methods.removeManager = function(userId) {
+    if (!Array.isArray(this.managers)) this.managers = [];
     this.managers = this.managers.filter(id => id.toString() !== userId.toString());
     this.stats.lastActivity = new Date();
     return this.save();
@@ -198,20 +206,24 @@ groupSchema.statics.searchGroups = function(query, region = null) {
 
 // Pre-save middleware to update member count
 groupSchema.pre('save', function(next) {
+    if (!Array.isArray(this.users)) this.users = [];
+    if (!Array.isArray(this.managers)) this.managers = [];
     this.stats.memberCount = this.users.length;
     next();
 });
 
 // Pre-save middleware to ensure creator is in managers array and not duplicated in users array
 groupSchema.pre('save', function(next) {
+    if (!Array.isArray(this.managers)) this.managers = [];
+    if (!Array.isArray(this.users)) this.users = [];
     // Ensure creator is always a manager
-    if (!this.managers.includes(this.createdBy)) {
+    if (this.createdBy && !this.managers.find(id => id.toString() === this.createdBy.toString())) {
         this.managers.push(this.createdBy);
     }
-    
-    // Remove creator from users array to avoid duplication (creator is already a manager)
-    this.users = this.users.filter(id => id.toString() !== this.createdBy.toString());
-    
+    // Remove creator from users array to avoid duplication
+    if (this.createdBy) {
+        this.users = this.users.filter(id => id.toString() !== this.createdBy.toString());
+    }
     // Add validation for array lengths
     if (this.managers.length > 100) {
         return next(new Error('A group cannot have more than 100 managers'));
@@ -219,7 +231,6 @@ groupSchema.pre('save', function(next) {
     if (this.users.length > 1000) {
         return next(new Error('A group cannot have more than 1000 users'));
     }
-    
     next();
 });
 

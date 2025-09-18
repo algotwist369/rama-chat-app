@@ -49,5 +49,10 @@ export const authApi = {
   deleteUser: async (userId) => {
     const response = await axiosInstance.delete(`/auth/users/${userId}`);
     return response.data;
+  },
+
+  getRoutes: async () => {
+    const response = await axiosInstance.get('/auth/routes');
+    return response.data;
   }
 };

@@ -1,5 +1,6 @@
 import React from 'react';
-import { Users, LogOut, Plus, X } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Users, LogOut, Plus, X, Settings } from 'lucide-react';
 
 const Sidebar = ({ groups, selectedGroup, onGroupSelect, onLogout, user, onClose }) => {
   return (
@@ -83,6 +84,19 @@ const Sidebar = ({ groups, selectedGroup, onGroupSelect, onLogout, user, onClose
           </div>
         )}
       </div>
+
+      {/* Admin Panel Link (for admin users) */}
+      {user?.role === 'admin' && (
+        <div className="p-3 sm:p-4 border-t border-gray-200 dark:border-gray-700">
+          <Link
+            to="/admin"
+            className="w-full flex items-center space-x-2 sm:space-x-3 p-2 sm:p-3 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+          >
+            <Settings className="h-4 w-4 flex-shrink-0" />
+            <span className="text-sm sm:text-base font-medium">Admin Panel</span>
+          </Link>
+        </div>
+      )}
 
       {/* Logout Button */}
       <div className="p-3 sm:p-4 border-t border-gray-200 dark:border-gray-700">

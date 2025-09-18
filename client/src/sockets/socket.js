@@ -14,7 +14,7 @@ class SocketService {
       return;
     }
 
-    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:9080';
+    const backendUrl = import.meta.env.VITE_SOCKET_URL || 'https://c.d0s369.co.in';
     
     console.log('Connecting to socket server:', backendUrl);
     

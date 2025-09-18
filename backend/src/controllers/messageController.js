@@ -967,9 +967,84 @@ const deleteMultipleMessages = asyncHandler(async (req, res) => {
     });
 });
 
+/**
+ * Get all messages (admin only)
+ */
+const getAllMessages = asyncHandler(async (req, res) => {
+    // Only admins can see all messages
+    if (req.user.role !== 'admin') {
+        throw new AuthorizationError('Access denied. Admin privileges required.');
+    }
+
+    const { page = 1, limit = 50, search = '', groupId = '', startDate = '', endDate = '' } = req.query;
+    const skip = (page - 1) * limit;
+
+    // Validate pagination parameters
+    const pageNum = Math.max(1, parseInt(page));
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit)));
+    const skipNum = (pageNum - 1) * limitNum;
+
+    // Build search query
+    let searchQuery = { 'deleted.isDeleted': { $ne: true } };
+    
+    if (search) {
+        searchQuery.content = { $regex: search, $options: 'i' };
+    }
+    
+    if (groupId) {
+        if (!mongoose.Types.ObjectId.isValid(groupId)) {
+            throw new ValidationError('Invalid group ID format');
+        }
+        searchQuery.groupId = groupId;
+    }
+    
+    if (startDate || endDate) {
+        searchQuery.createdAt = {};
+        if (startDate) searchQuery.createdAt.$gte = new Date(startDate);
+        if (endDate) searchQuery.createdAt.$lte = new Date(endDate);
+    }
+
+    const messages = await Message.find(searchQuery)
+        .populate('senderId', 'username email role')
+        .populate('groupId', 'name region')
+        .sort({ createdAt: -1 })
+        .skip(skipNum)
+        .limit(limitNum);
+
+    const total = await Message.countDocuments(searchQuery);
+
+    logger.business('All messages accessed', {
+        userId: req.user._id,
+        page: pageNum,
+        limit: limitNum,
+        total,
+        search,
+        groupId,
+        startDate,
+        endDate
+    });
+
+    res.json({
+        messages,
+        pagination: {
+            page: pageNum,
+            limit: limitNum,
+            total,
+            pages: Math.ceil(total / limitNum),
+        },
+        filters: {
+            search,
+            groupId,
+            startDate,
+            endDate
+        }
+    });
+});
+
 module.exports = {
     sendMessage,
     getMessages,
+    getAllMessages,
     testGetMessages,
     editMessage,
     deleteMessage,

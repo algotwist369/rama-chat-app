@@ -86,4 +86,19 @@ export const messageApi = {
 
   // Message replies - handled through regular sendMessage with replyTo field
   // No separate endpoint needed
+
+  // Admin endpoint to get all messages
+  getAllMessages: async (params = {}) => {
+    const queryParams = new URLSearchParams();
+    
+    if (params.page) queryParams.append('page', params.page);
+    if (params.limit) queryParams.append('limit', params.limit);
+    if (params.search) queryParams.append('search', params.search);
+    if (params.groupId) queryParams.append('groupId', params.groupId);
+    if (params.startDate) queryParams.append('startDate', params.startDate);
+    if (params.endDate) queryParams.append('endDate', params.endDate);
+    
+    const response = await axiosInstance.get(`/messages/all?${queryParams}`);
+    return response.data;
+  },
 };

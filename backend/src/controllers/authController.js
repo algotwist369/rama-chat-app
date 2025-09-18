@@ -6,12 +6,14 @@ const { getRedisClient } = require('../config/redis');
 const { 
     ValidationError, 
     AuthenticationError, 
+    AuthorizationError,
     ConflictError, 
     NotFoundError,
     DatabaseError 
 } = require('../utils/errors');
 const { asyncHandler } = require('../middleware/errorHandler');
 const cacheManager = require('../utils/cacheManager');
+const { logger } = require('../utils/logger');
 
 const getUsers = asyncHandler(async (req, res) => {
     // Try to get from cache first
@@ -394,6 +396,131 @@ const deleteUser = asyncHandler(async (req, res) => {
     });
 });
 
+/**
+ * Get all available routes (admin only)
+ */
+const getRoutes = asyncHandler(async (req, res) => {
+    // Only admins can see all routes
+    if (req.user.role !== 'admin') {
+        throw new AuthorizationError('Access denied. Admin privileges required.');
+    }
+
+    const routes = {
+        auth: [
+            { method: 'POST', path: '/api/auth/register', description: 'Register a new user', auth: false },
+            { method: 'POST', path: '/api/auth/login', description: 'Login with email and password', auth: false },
+            { method: 'POST', path: '/api/auth/login-pin', description: 'Login with email and PIN', auth: false },
+            { method: 'POST', path: '/api/auth/refresh', description: 'Refresh access token', auth: false },
+            { method: 'POST', path: '/api/auth/logout', description: 'Logout user', auth: true },
+            { method: 'GET', path: '/api/auth/profile', description: 'Get user profile', auth: true },
+            { method: 'GET', path: '/api/auth/users', description: 'Get all users (admin only)', auth: true, admin: true },
+            { method: 'POST', path: '/api/auth/create-user', description: 'Create new user (admin only)', auth: true, admin: true },
+            { method: 'PUT', path: '/api/auth/users/:userId', description: 'Update user (admin only)', auth: true, admin: true },
+            { method: 'DELETE', path: '/api/auth/users/:userId', description: 'Delete user (admin only)', auth: true, admin: true }
+        ],
+        groups: [
+            { method: 'POST', path: '/api/groups', description: 'Create new group', auth: true, roles: ['admin', 'manager'] },
+            { method: 'GET', path: '/api/groups', description: 'Get user groups', auth: true },
+            { method: 'GET', path: '/api/groups/all', description: 'Get all groups (admin only)', auth: true, admin: true },
+            { method: 'GET', path: '/api/groups/:id', description: 'Get group by ID', auth: true },
+            { method: 'PUT', path: '/api/groups/:id', description: 'Update group', auth: true },
+            { method: 'DELETE', path: '/api/groups/:id', description: 'Delete group (admin only)', auth: true, admin: true },
+            { method: 'GET', path: '/api/groups/:groupId/members', description: 'Get group members', auth: true },
+            { method: 'POST', path: '/api/groups/:groupId/join', description: 'Join group', auth: true },
+            { method: 'POST', path: '/api/groups/:groupId/leave', description: 'Leave group', auth: true },
+            { method: 'POST', path: '/api/groups/:groupId/users/:userId', description: 'Add user to group (admin only)', auth: true, admin: true },
+            { method: 'DELETE', path: '/api/groups/:groupId/users/:userId', description: 'Remove user from group (admin only)', auth: true, admin: true },
+            { method: 'POST', path: '/api/groups/:groupId/managers/:userId', description: 'Add manager to group (admin only)', auth: true, admin: true },
+            { method: 'DELETE', path: '/api/groups/:groupId/managers/:userId', description: 'Remove manager from group (admin only)', auth: true, admin: true }
+        ],
+        messages: [
+            { method: 'POST', path: '/api/messages', description: 'Send message', auth: true },
+            { method: 'GET', path: '/api/messages/:groupId', description: 'Get messages from group', auth: true },
+            { method: 'GET', path: '/api/messages/all', description: 'Get all messages (admin only)', auth: true, admin: true },
+            { method: 'PUT', path: '/api/messages/:messageId', description: 'Edit message', auth: true },
+            { method: 'DELETE', path: '/api/messages/:messageId', description: 'Delete message', auth: true },
+            { method: 'POST', path: '/api/messages/delete-multiple', description: 'Delete multiple messages', auth: true },
+            { method: 'GET', path: '/api/messages/search', description: 'Search messages', auth: true },
+            { method: 'POST', path: '/api/messages/:messageId/forward', description: 'Forward message', auth: true },
+            { method: 'POST', path: '/api/messages/delivered', description: 'Mark messages as delivered', auth: true },
+            { method: 'POST', path: '/api/messages/seen', description: 'Mark messages as seen', auth: true },
+            { method: 'POST', path: '/api/messages/:messageId/reactions', description: 'Toggle message reaction', auth: true },
+            { method: 'GET', path: '/api/messages/test/:groupId', description: 'Test endpoint for debugging', auth: true }
+        ],
+        files: [
+            { method: 'POST', path: '/api/files/upload', description: 'Upload file', auth: true },
+            { method: 'GET', path: '/api/files/:fileId', description: 'Get file info', auth: true },
+            { method: 'DELETE', path: '/api/files/:fileId', description: 'Delete file', auth: true },
+            { method: 'GET', path: '/api/files/user/:userId', description: 'Get user files', auth: true }
+        ],
+        notifications: [
+            { method: 'GET', path: '/api/notifications', description: 'Get user notifications', auth: true },
+            { method: 'PUT', path: '/api/notifications/:notificationId/read', description: 'Mark notification as read', auth: true },
+            { method: 'PUT', path: '/api/notifications/read-all', description: 'Mark all notifications as read', auth: true },
+            { method: 'DELETE', path: '/api/notifications/:notificationId', description: 'Delete notification', auth: true },
+            { method: 'DELETE', path: '/api/notifications/clear-all', description: 'Clear all notifications', auth: true }
+        ],
+        users: [
+            { method: 'GET', path: '/api/users/test', description: 'Test user routes', auth: false }
+        ],
+        system: [
+            { method: 'GET', path: '/', description: 'API root endpoint', auth: false },
+            { method: 'GET', path: '/health', description: 'Health check', auth: false },
+            { method: 'GET', path: '/health/db', description: 'Database health check', auth: false },
+            { method: 'GET', path: '/health/rate-limit', description: 'Rate limit status', auth: false },
+            { method: 'GET', path: '/health/cache', description: 'Cache statistics', auth: false },
+            { method: 'GET', path: '/health/performance', description: 'Performance metrics', auth: false },
+            { method: 'GET', path: '/health/security', description: 'Security audit results', auth: false }
+        ]
+    };
+
+    // Calculate statistics
+    const stats = {
+        total: 0,
+        byMethod: {},
+        byAuth: { required: 0, optional: 0 },
+        byRole: { admin: 0, manager: 0, user: 0, public: 0 }
+    };
+
+    Object.values(routes).forEach(category => {
+        category.forEach(route => {
+            stats.total++;
+            
+            // Count by method
+            stats.byMethod[route.method] = (stats.byMethod[route.method] || 0) + 1;
+            
+            // Count by auth requirement
+            if (route.auth) {
+                stats.byAuth.required++;
+            } else {
+                stats.byAuth.optional++;
+            }
+            
+            // Count by role
+            if (route.admin) {
+                stats.byRole.admin++;
+            } else if (route.roles && route.roles.includes('manager')) {
+                stats.byRole.manager++;
+            } else if (route.auth) {
+                stats.byRole.user++;
+            } else {
+                stats.byRole.public++;
+            }
+        });
+    });
+
+    logger.business('Routes information accessed', {
+        userId: req.user._id,
+        totalRoutes: stats.total
+    });
+
+    res.json({
+        routes,
+        statistics: stats,
+        timestamp: new Date().toISOString()
+    });
+});
+
 module.exports = {
     getUsers,
     register,
@@ -405,4 +532,5 @@ module.exports = {
     createUser,
     updateUser,
     deleteUser,
+    getRoutes,
 };

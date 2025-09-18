@@ -4,6 +4,7 @@ const Message = require('../models/Message');
 const {
     sendMessage,
     getMessages,
+    getAllMessages,
     editMessage,
     deleteMessage,
     deleteMultipleMessages,
@@ -14,8 +15,9 @@ const {
     testGetMessages
 } = require('../controllers/messageController');
 const auth = require('../middleware/authMiddleware');
+const { requireAdmin } = require('../middleware/rbac');
 const { validate, messageSchemas } = require('../middleware/validation');
-const { messageSendLimiter, messageLimiter } = require('../middleware/rateLimiter');
+const { messageSendLimiter, messageLimiter, adminLimiter } = require('../middleware/rateLimiter');
 
 const router = express.Router();
 
@@ -42,6 +44,7 @@ router.use(auth); // all routes require auth
 router.post('/', messageSendLimiter, validate(messageSchemas.sendMessage), sendMessage);
 router.delete('/delete-multiple', messageSendLimiter, deleteMultipleMessages);
 router.get('/search', messageLimiter, searchMessages);
+router.get('/all', auth, requireAdmin, adminLimiter, getAllMessages);
 router.post('/delivered', messageLimiter, validate(messageSchemas.markAsDelivered), markAsDelivered);
 router.post('/seen', messageLimiter, validate(messageSchemas.markAsSeen), markAsSeen);
 

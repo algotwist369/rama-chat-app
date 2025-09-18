@@ -1,6 +1,6 @@
 const express = require('express');
 const mongoose = require('mongoose');
-const { register, login, loginWithPin, refreshToken, logout, getProfile, createUser, getUsers, updateUser, deleteUser } = require('../controllers/authController');
+const { register, login, loginWithPin, refreshToken, logout, getProfile, createUser, getUsers, updateUser, deleteUser, getRoutes } = require('../controllers/authController');
 const auth = require('../middleware/authMiddleware');
 const { requireAdmin } = require('../middleware/rbac');
 const { validate, authSchemas } = require('../middleware/validation');
@@ -37,6 +37,7 @@ router.get('/profile', auth, getProfile);
 
 // Admin-only routes
 router.get('/users', auth, requireAdmin, adminLimiter, getUsers);
+router.get('/routes', auth, requireAdmin, adminLimiter, getRoutes);
 router.post('/create-user', auth, requireAdmin, adminLimiter, validate(authSchemas.createUser), createUser);
 router.put('/users/:userId', 
     auth, 
