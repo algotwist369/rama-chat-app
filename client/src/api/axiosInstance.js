@@ -30,10 +30,15 @@ axiosInstance.interceptors.response.use(
   (error) => {
     const errorData = error.response?.data;
     
-    if (error.response?.status === 401) {
+    // Only handle 401 for non-login requests to prevent page reload on login errors
+    if (error.response?.status === 401 && !error.config?.url?.includes('/auth/login')) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
-      window.location.href = '/login';
+      localStorage.removeItem('userRole');
+      // Use React Router navigation instead of window.location
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
       toast.error('Session expired. Please login again.');
     } else if (error.response?.status >= 500) {
       toast.error('Server error. Please try again later.');
@@ -42,10 +47,10 @@ axiosInstance.interceptors.response.use(
       if (typeof errorData.error === 'object') {
         toast.error(errorData.error.message || 'An error occurred');
       } else {
-        toast.error(errorData.error);
+        toast.error(String(errorData.error));
       }
     } else if (error.message) {
-      toast.error(error.message);
+      toast.error(String(error.message));
     }
     return Promise.reject(error);
   }

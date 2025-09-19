@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import socketService from '../sockets/socket';
 import { messageApi, groupApi } from '../api';
@@ -8,14 +8,12 @@ import toast from 'react-hot-toast';
 import Sidebar from '../components/Sidebar';
 import ChatWindow from '../components/ChatWindow';
 import LoadingSpinner from '../components/common/LoadingSpinner';
-import SocketDebugger from '../components/SocketDebugger';
 import NotificationPanel from '../components/NotificationPanel';
-import DebugPanel from '../components/DebugPanel';
-import EmojiPickerTest from '../components/EmojiPickerTest';
 import Settings from '../components/Settings';
-
-// Icons
-import { Bell, Wifi, WifiOff, Settings as SettingsIcon, Menu, X } from 'lucide-react';
+import DashboardHeader from '../components/DashboardHeader';
+import EmptyGroupState from '../components/EmptyGroupState';
+import AuthErrorState from '../components/AuthErrorState';
+import UngroupedUser from '../components/UngroupedUser';
 
 const Dashboard = () => {
   // Auth
@@ -30,9 +28,6 @@ const Dashboard = () => {
   const [socketConnected, setSocketConnected] = useState(false);
   const [showNotificationPanel, setShowNotificationPanel] = useState(false);
   const [notifications, setNotifications] = useState([]);
-  const [showSocketDebugger, setShowSocketDebugger] = useState(false);
-  const [showDebugPanel, setShowDebugPanel] = useState(false);
-  const [showEmojiTest, setShowEmojiTest] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -71,6 +66,7 @@ const Dashboard = () => {
   // Load groups
   const loadGroups = useCallback(async () => {
     try {
+      setLoading(true);
       const response = await groupApi.getGroups();
       setGroups(response.groups || []);
       if (response.groups?.length > 0 && !selectedGroup) {
@@ -78,14 +74,17 @@ const Dashboard = () => {
       }
     } catch (error) {
       console.error('Failed to load groups:', error);
-      toast.error('Failed to load groups');
+      const errorMessage = error.response?.data?.error || error.message || 'Failed to load groups';
+      toast.error(errorMessage);
+    } finally {
+      setLoading(false);
     }
   }, [selectedGroup]);
 
   // Load group members
   const loadGroupMembers = useCallback(async (groupId) => {
     if (!groupId) return;
-    
+
     try {
       const response = await groupApi.getGroupMembers(groupId);
       // Combine users and managers into a single array
@@ -103,26 +102,29 @@ const Dashboard = () => {
   // Load messages for selected group
   const loadMessages = useCallback(async (groupId) => {
     if (!groupId) return;
-    
+
     try {
+      // Only set loading if we have a group to load messages for
       setLoading(true);
       // Include metadata to get seenBy and deliveredTo data
       const response = await messageApi.getMessages(groupId, { includeMetadata: true });
       const newMessages = response.messages || [];
-      
+
       setMessages(newMessages);
       processedMessageIds.current.clear();
-      
+
       // Add all loaded message IDs to processed set to prevent duplicates
       newMessages.forEach(msg => {
         if (msg._id) {
           processedMessageIds.current.add(msg._id);
         }
       });
-      
+
     } catch (error) {
       console.error('Failed to load messages:', error);
-      toast.error('Failed to load messages');
+      const errorMessage = error.response?.data?.error || error.message || 'Failed to load messages';
+      toast.error(errorMessage);
+      setMessages([]); // Clear messages on error
     } finally {
       setLoading(false);
     }
@@ -130,38 +132,31 @@ const Dashboard = () => {
 
   // Handle new message
   const handleNewMessage = useCallback((message) => {
-    console.log('📨 New message received:', message);
-    
     if (!message || !message._id) {
-      console.warn('Invalid message received:', message);
       return;
     }
-    
+
     const messageId = message._id;
-    
+
     // Prevent duplicates
     if (processedMessageIds.current.has(messageId)) {
-      console.log('Duplicate message ignored:', messageId);
       return;
     }
-    
+
     // Handle both populated and non-populated groupId formats
-    const messageGroupId = typeof message.groupId === 'object' 
-      ? message.groupId._id 
+    const messageGroupId = typeof message.groupId === 'object'
+      ? message.groupId._id
       : message.groupId;
-    
+
     const currentSelectedGroup = selectedGroupRef.current;
     const currentGroups = groupsRef.current;
     const currentSetMessages = setMessagesRef.current;
     const currentScrollToBottom = scrollToBottomRef.current;
-    
-    console.log('Message group ID:', messageGroupId, 'Selected group ID:', currentSelectedGroup?._id);
-    
+
     // If no group is selected but we have groups, try to select the group this message belongs to
     if (!currentSelectedGroup && currentGroups.length > 0) {
       const messageGroup = currentGroups.find(g => g._id === messageGroupId);
       if (messageGroup) {
-        console.log('Auto-selecting group for new message:', messageGroup.name);
         setSelectedGroup(messageGroup);
         // Add the message after setting the group
         setTimeout(() => {
@@ -172,30 +167,24 @@ const Dashboard = () => {
         return;
       }
     }
-    
+
     // Only add if for current group
     if (currentSelectedGroup && messageGroupId === currentSelectedGroup._id) {
-      console.log('Adding message to current group:', messageGroupId);
       processedMessageIds.current.add(messageId);
       currentSetMessages(prev => {
         // Check again for duplicates in state
         const exists = prev.some(msg => msg._id === messageId);
         if (exists) {
-          console.log('Message already exists in state, skipping');
           return prev;
         }
         return [...prev, message];
       });
       currentScrollToBottom();
-    } else {
-      console.log('Message not for current group, ignoring');
     }
-  }, []); // Remove all dependencies since we're using refs
+  }, [setSelectedGroup]);
 
   // Handle message edited
   const handleMessageEdited = useCallback(({ messageId, message: editedMessage }) => {
-    console.log('📝 Dashboard: Received message:edited event:', { messageId, editedMessage });
-    
     // Handle both populated and non-populated groupId formats
     const messageGroupId = typeof editedMessage.groupId === 'object'
       ? editedMessage.groupId._id
@@ -204,30 +193,25 @@ const Dashboard = () => {
     const currentSelectedGroup = selectedGroupRef.current;
     const currentSetMessages = setMessagesRef.current;
 
-    console.log('📝 Dashboard: Message group ID:', messageGroupId, 'Current group ID:', currentSelectedGroup?._id);
-
     if (currentSelectedGroup && messageGroupId === currentSelectedGroup._id) {
-      console.log('📝 Dashboard: Updating message in state');
       currentSetMessages(prev =>
         prev.map(msg => msg._id === messageId ? editedMessage : msg)
       );
-    } else {
-      console.log('📝 Dashboard: Message not for current group, ignoring');
     }
   }, []);
 
   // Handle message deleted
   const handleMessageDeleted = useCallback(({ messageId }) => {
     const currentSetMessages = setMessagesRef.current;
-    currentSetMessages(prev => 
-      prev.map(msg => 
-        msg._id === messageId 
-          ? { 
-              ...msg, 
-              content: 'This message has been deleted', 
-              isDeleted: true,
-              deletedAt: new Date().toISOString()
-            }
+    currentSetMessages(prev =>
+      prev.map(msg =>
+        msg._id === messageId
+          ? {
+            ...msg,
+            content: 'This message has been deleted',
+            isDeleted: true,
+            deletedAt: new Date().toISOString()
+          }
           : msg
       )
     );
@@ -237,8 +221,8 @@ const Dashboard = () => {
   const handleMessageReaction = useCallback(({ messageId, reactions, userId, emoji, action }) => {
     const currentSetMessages = setMessagesRef.current;
     currentSetMessages(prev =>
-      prev.map(msg => 
-        msg._id === messageId 
+      prev.map(msg =>
+        msg._id === messageId
           ? { ...msg, reactions: reactions }
           : msg
       )
@@ -249,8 +233,8 @@ const Dashboard = () => {
   const handleMessageSeen = useCallback(({ messageId, seenBy, userId }) => {
     const currentSetMessages = setMessagesRef.current;
     currentSetMessages(prev =>
-      prev.map(msg => 
-        msg._id === messageId 
+      prev.map(msg =>
+        msg._id === messageId
           ? { ...msg, seenBy: seenBy }
           : msg
       )
@@ -259,7 +243,6 @@ const Dashboard = () => {
 
   // Handle bulk messages seen
   const handleMessagesSeen = useCallback(({ messageIds, userId }) => {
-    console.log('Handling bulk messages seen:', { messageIds, userId });
     const currentSetMessages = setMessagesRef.current;
     currentSetMessages(prev =>
       prev.map(msg => {
@@ -267,7 +250,6 @@ const Dashboard = () => {
           // Add user to seenBy if not already present
           const alreadySeen = msg.seenBy?.some(s => s.user === userId);
           if (!alreadySeen) {
-            console.log('Adding seen status to message:', msg._id, 'for user:', userId);
             return {
               ...msg,
               seenBy: [
@@ -284,8 +266,6 @@ const Dashboard = () => {
 
   // Handle notification
   const handleNotification = useCallback((notification) => {
-    console.log('📢 Notification received:', notification);
-    
     // Add notification to state
     const newNotification = {
       id: Date.now().toString(),
@@ -293,9 +273,9 @@ const Dashboard = () => {
       read: false,
       createdAt: new Date(notification.createdAt || Date.now())
     };
-    
+
     setNotifications(prev => [newNotification, ...prev.slice(0, 49)]); // Keep last 50 notifications
-    
+
     // Show toast notification
     toast.success(notification.message || 'New notification');
   }, []);
@@ -331,7 +311,7 @@ const Dashboard = () => {
     const optimisticMessage = {
       _id: `temp_${Date.now()}`,
       content: messageData.content,
-      senderId: { _id: user.id, username: user.username },
+      senderId: { _id: user._id || user.id, username: user.username },
       groupId: selectedGroup._id,
       createdAt: new Date(),
       messageType: messageData.messageType || 'text',
@@ -343,11 +323,8 @@ const Dashboard = () => {
 
     try {
       if (socketService.isConnected()) {
-        console.log('Sending message via socket:', messagePayload);
         socketService.sendMessage(messagePayload, async (response) => {
-          console.log('Socket response:', response);
           if (response?.error) {
-            console.log('Socket error, falling back to API:', response.error);
             // Remove optimistic message and try API fallback
             setMessages(prev => prev.filter(msg => msg._id !== optimisticMessage._id));
             try {
@@ -365,7 +342,6 @@ const Dashboard = () => {
           }
         });
       } else {
-        console.log('Socket not connected, using API');
         // Remove optimistic message and use API
         setMessages(prev => prev.filter(msg => msg._id !== optimisticMessage._id));
         const response = await messageApi.sendMessage(messagePayload);
@@ -382,13 +358,10 @@ const Dashboard = () => {
 
   // Edit message
   const handleEditMessage = useCallback(async (messageId, content) => {
-    console.log('Dashboard: handleEditMessage called with:', { messageId, content, selectedGroup: selectedGroup?._id });
     try {
       if (socketService.isConnected()) {
-        console.log('Dashboard: Using socket to edit message');
         socketService.editMessage(messageId, content, selectedGroup._id);
       } else {
-        console.log('Dashboard: Using API to edit message');
         await messageApi.editMessage(messageId, content);
       }
       toast.success('Message updated');
@@ -433,9 +406,7 @@ const Dashboard = () => {
   // React to message
   const handleReactToMessage = useCallback(async (messageId, emoji) => {
     try {
-      console.log('Reacting to message:', { messageId, emoji });
       const response = await messageApi.toggleReaction(messageId, emoji);
-      console.log('Reaction sent successfully:', response);
       toast.success('Reaction added!');
     } catch (error) {
       console.error('Failed to react to message:', error);
@@ -445,7 +416,6 @@ const Dashboard = () => {
 
   // Reply to message
   const handleReplyToMessage = useCallback((message) => {
-    console.log('Replying to message:', message);
     // Set the reply message in state so ChatWindow can handle it
     setReplyToMessage(message);
   }, []);
@@ -453,16 +423,14 @@ const Dashboard = () => {
   // Handle user profile update
   const handleUserUpdate = useCallback((updatedUser) => {
     // Update the user context or local state
-    console.log('User profile updated:', updatedUser);
     toast.success('Profile updated successfully');
   }, []);
 
   // Handle group leave
   const handleGroupLeave = useCallback((groupId) => {
-    console.log('User left group:', groupId);
     // Remove the group from the groups list
     setGroups(prev => prev.filter(group => group._id !== groupId));
-    
+
     // If the left group was selected, select the first available group
     if (selectedGroup?._id === groupId) {
       const remainingGroups = groups.filter(group => group._id !== groupId);
@@ -472,7 +440,7 @@ const Dashboard = () => {
         setSelectedGroup(null);
       }
     }
-    
+
     toast.success('Left group successfully');
   }, [selectedGroup, groups]);
 
@@ -487,28 +455,23 @@ const Dashboard = () => {
     }
 
     const handleConnect = () => {
-      console.log('Socket connected in Dashboard');
       setSocketConnected(true);
       // Rejoin current group if we have one
       const currentSelectedGroup = selectedGroupRef.current;
       if (currentSelectedGroup) {
-        console.log('Rejoining group on connect:', currentSelectedGroup._id);
         socketService.joinGroup(currentSelectedGroup._id);
       }
     };
-    
+
     const handleDisconnect = () => {
-      console.log('Socket disconnected in Dashboard');
       setSocketConnected(false);
     };
 
     const handleReconnect = () => {
-      console.log('Socket reconnected in Dashboard');
       setSocketConnected(true);
       // Rejoin current group if we have one
       const currentSelectedGroup = selectedGroupRef.current;
       if (currentSelectedGroup) {
-        console.log('Rejoining group on reconnect:', currentSelectedGroup._id);
         socketService.joinGroup(currentSelectedGroup._id);
       }
     };
@@ -556,6 +519,10 @@ const Dashboard = () => {
       setMessages([]);
       loadMessages(selectedGroup._id);
       loadGroupMembers(selectedGroup._id);
+    } else {
+      // If no group is selected, clear messages and ensure loading is false
+      setMessages([]);
+      setLoading(false);
     }
   }, [selectedGroup, loadMessages, loadGroupMembers]);
 
@@ -569,18 +536,15 @@ const Dashboard = () => {
     if (selectedGroup && socketService.isConnected()) {
       // Leave previous group if it exists
       if (previousGroupRef.current && previousGroupRef.current._id !== selectedGroup._id) {
-        console.log('Dashboard: Leaving previous group:', previousGroupRef.current._id);
         socketService.leaveGroup(previousGroupRef.current._id);
       }
-      
-      console.log('Dashboard: Joining group:', selectedGroup._id);
+
       socketService.joinGroup(selectedGroup._id);
       previousGroupRef.current = selectedGroup;
     } else if (selectedGroup && !socketService.isConnected()) {
       // Try to reconnect
       const token = localStorage.getItem('token');
       if (token) {
-        console.log('Dashboard: Reconnecting socket for group:', selectedGroup._id);
         socketService.connect(token);
       }
     }
@@ -604,25 +568,17 @@ const Dashboard = () => {
           // 1. Not our own message
           // 2. Not already seen by us
           // 3. Not optimistic message
-          const isOwnMessage = msg.senderId._id === user.id || msg.senderId._id === user._id;
-          const alreadySeen = msg.seenBy?.some(s => s.user === user.id || s.user === user._id);
+          const currentUserId = user._id || user.id;
+          const isOwnMessage = msg.senderId._id === currentUserId;
+          const alreadySeen = msg.seenBy?.some(s => s.user === currentUserId);
           const isOptimistic = msg.isOptimistic;
-          
-          console.log('Checking message for seen status:', {
-            messageId: msg._id,
-            isOwnMessage,
-            alreadySeen,
-            isOptimistic,
-            seenBy: msg.seenBy,
-            currentUserId: user.id
-          });
-          
+
+
           return !isOwnMessage && !isOptimistic && !alreadySeen;
         })
         .map(msg => msg._id);
 
       if (messageIds.length > 0) {
-        console.log('Marking messages as seen:', messageIds);
         socketService.emit('message:seen', {
           messageIds,
           groupId: selectedGroup._id
@@ -634,10 +590,16 @@ const Dashboard = () => {
     const timeoutId = setTimeout(markMessagesAsSeen, 1000);
 
     return () => clearTimeout(timeoutId);
-  }, [messages, selectedGroup, user.id, user._id]);
+  }, [messages, selectedGroup, user._id, user.id]);
 
 
-  if (loading && !selectedGroup) {
+
+  // Safety check for user
+  if (!user) {
+    return <AuthErrorState onLogout={logout} />;
+  }
+
+  if (loading) {
     return (
       <div className="h-screen flex items-center justify-center">
         <LoadingSpinner size="large" />
@@ -645,208 +607,100 @@ const Dashboard = () => {
     );
   }
 
-  return (
-    <div className="h-screen flex bg-gray-50 dark:bg-gray-900 overflow-hidden">
-      {/* Mobile Sidebar Overlay */}
-      {sidebarOpen && (
-        <div 
-          className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
 
-      {/* Sidebar */}
-      <div className={`
+  return (
+    <>
+      {selectedGroup ? (
+        <div className="h-screen flex bg-gray-50 dark:bg-gray-900 overflow-hidden">
+          {/* Mobile Sidebar Overlay */}
+          {sidebarOpen && (
+            <div
+              className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
+              onClick={() => setSidebarOpen(false)}
+            />
+          )}
+
+          {/* Sidebar */}
+          <div className={`
         fixed lg:static inset-y-0 left-0 z-50 lg:z-auto
         transform transition-transform duration-300 ease-in-out
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
       `}>
-        <Sidebar
-          groups={groups}
-          selectedGroup={selectedGroup}
-          onGroupSelect={(group) => {
-            setSelectedGroup(group);
-            setSidebarOpen(false); // Close sidebar on mobile after selection
-          }}
-          onLogout={logout}
-          user={user}
-          onClose={() => setSidebarOpen(false)}
-        />
-      </div>
-
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden lg:ml-0">
-        {/* Header */}
-        <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-3 flex-shrink-0">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3 min-w-0 flex-1">
-              {/* Mobile Menu Button */}
-              <button
-                onClick={() => setSidebarOpen(true)}
-                className="lg:hidden p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                title="Open menu"
-              >
-                <Menu className="h-5 w-5" />
-              </button>
-              
-              <h1 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white truncate">
-                {selectedGroup?.name || 'RAMA Chat'}
-              </h1>
-              <div className="flex items-center space-x-2 flex-shrink-0">
-                {socketConnected ? (
-                  <Wifi className="h-4 w-4 text-green-500" />
-                ) : (
-                  <WifiOff className="h-4 w-4 text-red-500" />
-                )}
-                <span className="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline">
-                  {socketConnected ? 'Connected' : 'Disconnected'}
-                </span>
-              </div>
-            </div>
-
-            <div className="flex items-center space-x-1 sm:space-x-2 flex-shrink-0">
-              {/* Debug buttons - hidden on mobile */}
-              <div className="hidden items-center space-x-1">
-                {/* Socket Debugger Toggle */}
-                <button
-                  onClick={() => setShowSocketDebugger(!showSocketDebugger)}
-                  className={`p-2 rounded-lg transition-colors ${
-                    showSocketDebugger 
-                      ? 'bg-blue-500 text-white' 
-                      : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'
-                  }`}
-                  title="Socket Debugger"
-                >
-                  🔧
-                </button>
-
-                {/* Debug Panel Toggle */}
-                <button
-                  onClick={() => setShowDebugPanel(!showDebugPanel)}
-                  className={`p-2 rounded-lg transition-colors ${
-                    showDebugPanel 
-                      ? 'bg-green-500 text-white' 
-                      : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'
-                  }`}
-                  title="Debug Panel"
-                >
-                  🐛
-                </button>
-
-                {/* Emoji Test Toggle */}
-                <button
-                  onClick={() => setShowEmojiTest(!showEmojiTest)}
-                  className={`p-2 rounded-lg transition-colors ${
-                    showEmojiTest 
-                      ? 'bg-purple-500 text-white' 
-                      : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'
-                  }`}
-                  title="Emoji Test"
-                >
-                  😊
-                </button>
-              </div>
-
-              {/* Settings */}
-              <button
-                onClick={() => setShowSettings(true)}
-                className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                title="Settings"
-              >
-                <SettingsIcon className="h-5 w-5" />
-              </button>
-
-              {/* Notifications */}
-              <button
-                onClick={() => setShowNotificationPanel(!showNotificationPanel)}
-                className="relative p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                title="Notifications"
-              >
-                <Bell className="h-5 w-5" />
-                {unreadNotificationCount > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
-                    {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}
-                  </span>
-                )}
-              </button>
-
-            </div>
+            <Sidebar
+              groups={groups}
+              selectedGroup={selectedGroup}
+              onGroupSelect={(group) => {
+                setSelectedGroup(group);
+                setSidebarOpen(false); // Close sidebar on mobile after selection
+              }}
+              onLogout={logout}
+              user={user}
+              onClose={() => setSidebarOpen(false)}
+            />
           </div>
-        </div>
 
-        {/* Chat Window */}
-        {selectedGroup ? (
-          <ChatWindow
-            group={selectedGroup}
-            messages={messages}
-            currentUser={user}
-            onSendMessage={handleSendMessage}
-            onEditMessage={handleEditMessage}
-            onDeleteMessage={handleDeleteMessage}
-            onBulkDeleteMessages={handleBulkDeleteMessages}
-            onReactToMessage={handleReactToMessage}
-            onReplyToMessage={handleReplyToMessage}
-            replyToMessage={replyToMessage}
-            onClearReply={() => setReplyToMessage(null)}
-            loading={loading}
-            groupMembers={groupMembers}
+          {/* Main Content */}
+          <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden lg:ml-0">
+            {/* Header */}
+            <DashboardHeader
+              selectedGroup={selectedGroup}
+              socketConnected={socketConnected}
+              sidebarOpen={sidebarOpen}
+              setSidebarOpen={setSidebarOpen}
+              showNotificationPanel={showNotificationPanel}
+              setShowNotificationPanel={setShowNotificationPanel}
+              showSettings={showSettings}
+              setShowSettings={setShowSettings}
+              unreadNotificationCount={unreadNotificationCount}
+            />
+
+            {/* Chat Window */}
+            {selectedGroup ? (
+              <ChatWindow
+                group={selectedGroup}
+                messages={messages}
+                currentUser={user}
+                onSendMessage={handleSendMessage}
+                onEditMessage={handleEditMessage}
+                onDeleteMessage={handleDeleteMessage}
+                onBulkDeleteMessages={handleBulkDeleteMessages}
+                onReactToMessage={handleReactToMessage}
+                onReplyToMessage={handleReplyToMessage}
+                replyToMessage={replyToMessage}
+                onClearReply={() => setReplyToMessage(null)}
+                loading={loading}
+                groupMembers={groupMembers}
+              />
+            ) : (
+              <EmptyGroupState onOpenSidebar={() => setSidebarOpen(true)} />
+            )}
+          </div>
+
+          {/* Notification Panel */}
+          <NotificationPanel
+            isVisible={showNotificationPanel}
+            onClose={() => setShowNotificationPanel(false)}
+            notifications={notifications}
+            onMarkAsRead={handleMarkNotificationAsRead}
+            onClearAll={handleClearAllNotifications}
           />
-        ) : (
-          <div className="flex-1 flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
-            <div className="text-center max-w-md">
-              <h2 className="text-xl sm:text-2xl font-semibold text-gray-600 dark:text-gray-400 mb-2">
-                Select a group to start chatting
-              </h2>
-              <p className="text-sm sm:text-base text-gray-500 dark:text-gray-500">
-                Choose a group from the sidebar to begin your conversation
-              </p>
-              <button
-                onClick={() => setSidebarOpen(true)}
-                className="mt-4 lg:hidden px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors"
-              >
-                Open Groups
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
 
-      {/* Socket Debugger */}
-      <SocketDebugger isVisible={showSocketDebugger} />
+          {/* Settings Modal */}
+          <Settings
+            isVisible={showSettings}
+            onClose={() => setShowSettings(false)}
+            currentUser={user}
+            selectedGroup={selectedGroup}
+            onUserUpdate={handleUserUpdate}
+            onGroupLeave={handleGroupLeave}
+          />
 
-      {/* Notification Panel */}
-      <NotificationPanel
-        isVisible={showNotificationPanel}
-        onClose={() => setShowNotificationPanel(false)}
-        notifications={notifications}
-        onMarkAsRead={handleMarkNotificationAsRead}
-        onClearAll={handleClearAllNotifications}
-      />
-
-      {/* Debug Panel */}
-      <DebugPanel
-        isVisible={showDebugPanel}
-        onClose={() => setShowDebugPanel(false)}
-      />
-
-      {/* Emoji Test */}
-      {showEmojiTest && (
-        <div className="fixed top-16 right-4 z-50">
-          <EmojiPickerTest />
         </div>
+      ) : (
+        <UngroupedUser />
       )}
 
-      {/* Settings Modal */}
-      <Settings
-        isVisible={showSettings}
-        onClose={() => setShowSettings(false)}
-        currentUser={user}
-        selectedGroup={selectedGroup}
-        onUserUpdate={handleUserUpdate}
-        onGroupLeave={handleGroupLeave}
-      />
-
-    </div>
+    </>
   );
 };
 

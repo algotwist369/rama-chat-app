@@ -1,173 +1,170 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { authApi } from '../api';
-import toast from 'react-hot-toast';
-import LoadingSpinner from '../components/common/LoadingSpinner';
+import {
+  Button,
+  Input,
+  ErrorDisplay,
+  FormContainer
+} from '../components/common';
+import { useFormValidation } from '../hooks/useFormValidation';
+import { validationSchemas, validatePasswordConfirmation } from '../utils/validation';
 
 const Register = () => {
-  const [formData, setFormData] = useState({
-    username: '',
-    email: '',
-    password: '',
-    confirmPassword: ''
-  });
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  const handleChange = (e) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value
-    });
+  // Use form validation hook
+  const {
+    formData,
+    errors,
+    generalError,
+    handleChange,
+    clearErrors,
+    setError,
+    validateAll
+  } = useFormValidation(
+    {
+      username: '',
+      email: '',
+      password: '',
+      confirmPassword: ''
+    },
+    validationSchemas.register
+  );
+
+  // Custom validation for password confirmation
+  const validateRegisterForm = () => {
+    // Don't clear errors before validation
+    const isValid = validateAll();
+
+    // Additional validation for password confirmation
+    const passwordMatchError = validatePasswordConfirmation(
+      formData.password,
+      formData.confirmPassword
+    );
+
+    if (passwordMatchError) {
+      setError(passwordMatchError);
+      return false;
+    }
+
+    return isValid;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    if (formData.password !== formData.confirmPassword) {
-      toast.error('Passwords do not match');
+
+    // Validate form first (don't clear errors before validation)
+    if (!validateRegisterForm()) {
+      console.log({ errors, generalError });
       return;
     }
 
-    if (formData.password.length < 6) {
-      toast.error('Password must be at least 6 characters');
-      return;
+
+    // Clear general error only after validation passes
+    if (generalError) {
+      clearErrors();
     }
 
     setLoading(true);
 
     try {
-      const response = await authApi.register({
+      const result = await login({
         username: formData.username,
         email: formData.email,
         password: formData.password
       });
-      
-      // Store token and user data
-      localStorage.setItem('token', response.token);
-      localStorage.setItem('user', JSON.stringify(response.user));
-      localStorage.setItem('userRole', response.user.role);
-      
-      // Update auth context
-      login(response.user);
-      
-      toast.success('Registration successful!');
-      navigate('/dashboard');
+
+      if (result.success) {
+        navigate('/dashboard');
+      } else {
+        setError(result.error);
+      }
     } catch (error) {
-      const errorMessage = error.response?.data?.error || 'Registration failed';
-      toast.error(errorMessage);
+      console.error('Registration error:', error);
+      setError('Registration failed. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900 dark:text-white">
-            Create your account
-          </h2>
-          <p className="mt-2 text-center text-sm text-gray-600 dark:text-gray-400">
-            Or{' '}
-            <Link
-              to="/login"
-              className="font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400"
-            >
-              sign in to your existing account
-            </Link>
-          </p>
-        </div>
-        
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          <div className="space-y-4">
-            <div>
-              <label htmlFor="username" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Username
-              </label>
-              <input
-                id="username"
-                name="username"
-                type="text"
-                autoComplete="username"
-                required
-                value={formData.username}
-                onChange={handleChange}
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:text-white"
-                placeholder="Enter your username"
-              />
-            </div>
-            
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Email address
-              </label>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                autoComplete="email"
-                required
-                value={formData.email}
-                onChange={handleChange}
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:text-white"
-                placeholder="Enter your email"
-              />
-            </div>
-            
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Password
-              </label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                autoComplete="new-password"
-                required
-                value={formData.password}
-                onChange={handleChange}
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:text-white"
-                placeholder="Enter your password"
-              />
-            </div>
-            
-            <div>
-              <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Confirm Password
-              </label>
-              <input
-                id="confirmPassword"
-                name="confirmPassword"
-                type="password"
-                autoComplete="new-password"
-                required
-                value={formData.confirmPassword}
-                onChange={handleChange}
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:text-white"
-                placeholder="Confirm your password"
-              />
-            </div>
-          </div>
+    <FormContainer
+      title="Create your account"
+      subtitle={
+        <>
+          Or{' '}
+          <Link to="/login" className="font-medium text-blue-600">
+            sign in to your existing account
+          </Link>
+        </>
+      }
+    >
+      <form className="space-y-4" onSubmit={handleSubmit} noValidate>
+        {/* General Error Display */}
+        <ErrorDisplay error={generalError} />
+        <Input
+          label="Username"
+          name="username"
+          type="text"
+          value={formData.username}
+          onChange={handleChange}
+          placeholder="Enter your username"
+          required
+          autoComplete="username"
+          error={errors.username}
+        />
 
-          <div>
-            <button
-              type="submit"
-              disabled={loading}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? (
-                <LoadingSpinner size="small" />
-              ) : (
-                'Create account'
-              )}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+        <Input
+          label="Email address"
+          name="email"
+          type="email"
+          value={formData.email}
+          onChange={handleChange}
+          placeholder="Enter your email"
+          required
+          autoComplete="email"
+          error={errors.email}
+        />
+
+        <Input
+          label="Password"
+          name="password"
+          type="password"
+          value={formData.password}
+          onChange={handleChange}
+          placeholder="Enter your password"
+          required
+          autoComplete="new-password"
+          error={errors.password}
+        />
+
+        <Input
+          label="Confirm Password"
+          name="confirmPassword"
+          type="password"
+          value={formData.confirmPassword}
+          onChange={handleChange}
+          placeholder="Confirm your password"
+          required
+          autoComplete="new-password"
+          error={errors.confirmPassword}
+        />
+
+        <Button
+          type="submit"
+          variant="primary"
+          size="medium"
+          disabled={loading}
+          loading={loading}
+          className="w-full"
+        >
+          Create account
+        </Button>
+      </form>
+    </FormContainer>
   );
 };
 

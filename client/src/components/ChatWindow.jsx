@@ -400,9 +400,7 @@ const ChatWindow = ({
                     ? `Reply to ${replyToMessage.senderId?.username || 'Unknown'}...`
                     : "Type a message..."
               }
-              className=" scrollbar-hide
-                                          w-full
-                                          px-4 py-3
+              className=" scrollbar-hide w-full px-4 py-3
                                           text-base
                                           bg-white dark:bg-gray-900
                                           border border-gray-300 dark:border-gray-700
